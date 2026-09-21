@@ -56,10 +56,14 @@ Route::get('/health', function () {
 Route::get('/test-db', function () {
     try {
         $admin = \App\Models\Admin::where('email', 'admin@seedmis.com')->first();
+        $passwordCheck = $admin ? \Hash::check('admin123', $admin->password) : false;
+        
         return response()->json([
             'success' => true,
             'admin_exists' => $admin ? true : false,
             'admin_email' => $admin ? $admin->email : null,
+            'password_matches' => $passwordCheck,
+            'password_hash_length' => $admin ? strlen($admin->password) : 0,
             'db_connected' => true
         ]);
     } catch (\Exception $e) {
