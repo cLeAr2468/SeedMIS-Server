@@ -5,10 +5,7 @@ nixPkgs = ['php82', 'php82Packages.composer']
 cmds = ['cd backend && composer install --optimize-autoloader --no-dev --no-interaction']
 
 [phases.build]
-cmds = [
-    'cd backend && php artisan config:clear',
-    'cd backend && php artisan cache:clear'
-]
+cmds = ['echo "Build phase - skip cache"']
 
 [start]
 cmd = 'cd backend && php artisan migrate:fresh --force --seed && php artisan serve --host=0.0.0.0 --port=$PORT'
