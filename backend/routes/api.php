@@ -52,3 +52,21 @@ Route::get('/health', function () {
         'message' => 'API is running'
     ]);
 });
+
+Route::get('/test-db', function () {
+    try {
+        $admin = \App\Models\Admin::where('email', 'admin@seedmis.com')->first();
+        return response()->json([
+            'success' => true,
+            'admin_exists' => $admin ? true : false,
+            'admin_email' => $admin ? $admin->email : null,
+            'db_connected' => true
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage(),
+            'db_connected' => false
+        ]);
+    }
+});
