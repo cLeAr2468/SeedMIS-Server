@@ -77,6 +77,46 @@ Route::get('/test-db', function () {
     }
 });
 
+Route::get('/test-email', function () {
+    try {
+        $otp = '123456';
+        $email = 'reyesjerald638@gmail.com';
+        
+        \Log::info('Starting email test...');
+        \Log::info('Email config - Host: ' . config('mail.host') . ', Port: ' . config('mail.port'));
+        \Log::info('From: ' . config('mail.from.address'));
+        
+        Mail::raw("Test email from SeedMIS\n\nYour OTP: $otp\n\nThis is a test.", function($message) use ($email) {
+            $message->to($email)
+                    ->subject('SeedMIS - Test Email');
+        });
+        
+        \Log::info('Email sent successfully!');
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Test email sent successfully',
+            'config' => [
+                'host' => config('mail.host'),
+                'port' => config('mail.port'),
+                'from' => config('mail.from.address'),
+            ]
+        ]);
+    } catch (\Exception $e) {
+        \Log::error('Email test failed: ' . $e->getMessage());
+        
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage(),
+            'config' => [
+                'host' => config('mail.host'),
+                'port' => config('mail.port'),
+                'from' => config('mail.from.address'),
+            ]
+        ], 500);
+    }
+});
+
 Route::get('/seed-admin', function () {
     try {
         // Delete existing admin
