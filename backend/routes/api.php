@@ -20,11 +20,12 @@ use App\Http\Controllers\Api\InventoryController;
 */
 
 Route::middleware('api')->group(function () {
-    // Auth routes
+    // Public auth routes (no authentication required)
     Route::post('login', [AuthController::class, 'login']);
     Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('verify-otp', [AuthController::class, 'verifyOtp']);
     Route::post('reset-password', [AuthController::class, 'resetPassword']);
+});
 // Protected routes (requires authentication if needed in future)
 Route::middleware('api')->group(function () {
     // Client routes

@@ -3,7 +3,7 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
+use App\Models\Admin;
 
 class AdminSeeder extends Seeder
 {
@@ -13,16 +13,14 @@ class AdminSeeder extends Seeder
     public function run(): void
     {
         // Delete existing admin if exists
-        DB::table('admins')->where('email', 'admin@seedmis.com')->delete();
+        Admin::where('email', 'admin@seedmis.com')->delete();
 
-        // Create default admin with exact hash that works
-        DB::table('admins')->insert([
+        // Create default admin - password will be auto-hashed by model
+        Admin::create([
             'name' => 'Admin',
             'email' => 'admin@seedmis.com',
-            'password' => '$2y$12$LQv3c1yycL6UZP.rELQ8eOr5KdQqL8KJ5X9iVQB.FqZJLQKFRqTYq',
+            'password' => 'admin123',  // Plain text - auto-hashed by model
             'role' => 'admin',
-            'created_at' => now(),
-            'updated_at' => now(),
         ]);
 
         echo "✅ Admin account created successfully!\n";
