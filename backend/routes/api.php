@@ -25,7 +25,8 @@ Route::middleware('api')->group(function () {
     Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('verify-otp', [AuthController::class, 'verifyOtp']);
     Route::post('reset-password', [AuthController::class, 'resetPassword']);
-    
+// Protected routes (requires authentication if needed in future)
+Route::middleware('api')->group(function () {
     // Client routes
     Route::apiResource('clients', ClientController::class);
     
