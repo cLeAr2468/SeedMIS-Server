@@ -74,3 +74,33 @@ Route::get('/test-db', function () {
         ]);
     }
 });
+
+Route::get('/seed-admin', function () {
+    try {
+        // Delete existing admin
+        \App\Models\Admin::where('email', 'admin@seedmis.com')->delete();
+        
+        // Create new admin with correct password
+        $admin = \App\Models\Admin::create([
+            'name' => 'Admin',
+            'email' => 'admin@seedmis.com',
+            'password' => \Hash::make('admin123'),
+            'role' => 'admin',
+        ]);
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Admin created successfully',
+            'admin' => [
+                'email' => $admin->email,
+                'name' => $admin->name,
+            ],
+            'test_password' => \Hash::check('admin123', $admin->password)
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage()
+        ]);
+    }
+});
