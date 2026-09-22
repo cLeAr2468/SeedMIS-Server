@@ -80,7 +80,7 @@ Route::get('/test-db', function () {
 Route::get('/test-email', function () {
     try {
         $otp = '123456';
-        $email = 'reyesjerald638@gmail.com';
+        $email = request('email', 'test@example.com'); // Get from query parameter or use default
         
         \Log::info('Starting email test...');
         \Log::info('Email config - Host: ' . config('mail.host') . ', Port: ' . config('mail.port'));
@@ -96,6 +96,7 @@ Route::get('/test-email', function () {
         return response()->json([
             'success' => true,
             'message' => 'Test email sent successfully',
+            'sent_to' => $email,
             'config' => [
                 'host' => config('mail.host'),
                 'port' => config('mail.port'),
