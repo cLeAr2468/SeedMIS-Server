@@ -140,9 +140,20 @@ class AuthController extends Controller
             try {
                 $userName = $admin ? $admin->name : ($staff->first_name . ' ' . $staff->last_name);
                 Mail::to($email)->send(new PasswordResetOTP($otp, $userName));
+                
+                \Log::info('OTP email sent successfully to: ' . $email);
             } catch (\Exception $e) {
-                // Log email error but continue (for development)
+                // Log email error
                 \Log::error('Failed to send OTP email: ' . $e->getMessage());
+                \Log::error('Email config - Host: ' . config('mail.host') . ', Port: ' . config('mail.port'));
+                
+                // Still return success with OTP for development (remove in production)
+                return response()->json([
+                    'success' => true,
+                    'message' => 'OTP generated (email failed)',
+                    'otp' => $otp, // For development only
+                    'email_error' => $e->getMessage()
+                ], 200);
             }
 
             return response()->json([
