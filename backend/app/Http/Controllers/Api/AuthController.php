@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Admin;
 use App\Models\Staff;
+use App\Mail\PasswordResetOTP;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
@@ -137,12 +138,11 @@ class AuthController extends Controller
 
             // Send OTP via email to user's actual email
             try {
-                Mail::raw("Password Reset Request\n\nYour OTP Code: $otp\n\nThis OTP will expire in 10 minutes.\n\n- SeedMIS System", function($message) use ($email) {
-                    $message->to($email)
-                            ->subject('SeedMIS - Password Reset OTP');
-                });
+                $userName = $admin ? $admin->name : ($staff->first_name . ' ' . $staff->last_name);
+                Mail::to($email)->send(new PasswordResetOTP($otp, $userName));
             } catch (\Exception $e) {
                 // Log email error but continue (for development)
+                \Log::error('Failed to send OTP email: ' . $e->getMessage());
             }
 
             return response()->json([
