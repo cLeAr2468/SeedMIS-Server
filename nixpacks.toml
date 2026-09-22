@@ -8,4 +8,4 @@ cmds = ['cd backend && composer install --optimize-autoloader --no-dev --no-inte
 cmds = ['cd backend && mkdir -p storage/framework/{sessions,views,cache} storage/logs bootstrap/cache && chmod -R 775 storage bootstrap/cache']
 
 [start]
-cmd = 'cd backend && php artisan migrate --force && php artisan db:seed --force && php artisan storage:link && php artisan serve --host=0.0.0.0 --port=$PORT'
+cmd = 'cd backend && php artisan config:clear && php artisan cache:clear && php artisan migrate --force && php artisan db:seed --force && php artisan storage:link && php artisan serve --host=0.0.0.0 --port=$PORT'
