@@ -12,8 +12,14 @@ class AdminSeeder extends Seeder
      */
     public function run(): void
     {
-        // Delete existing admin if exists
-        Admin::where('email', 'admin@seedmis.com')->delete();
+        // Check if admin already exists
+        $existingAdmin = Admin::where('email', 'admin@seedmis.com')->first();
+
+        if ($existingAdmin) {
+            echo "ℹ️  Admin account already exists.\n";
+            echo "   Email: admin@seedmis.com\n";
+            return;
+        }
 
         // Create default admin - password will be auto-hashed by model
         Admin::create([
