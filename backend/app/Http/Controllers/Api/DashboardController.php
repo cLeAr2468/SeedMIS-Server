@@ -33,7 +33,7 @@ class DashboardController extends Controller
             // Total Seedlings: sum of created + transferred from production_history
             $totalSeedlings = DB::table('production_history')
                 ->whereIn('action_type', ['created', 'transferred'])
-                ->whereYear('changed_at', $currentYear)
+                ->whereBetween('changed_at', [$currentMonthStart, $currentMonthEnd])
                 ->sum('new_quantity');
                 
             $totalSeedlingsPrevMonth = DB::table('production_history')
@@ -49,11 +49,23 @@ class DashboardController extends Controller
 
             // Distributed - current month only
             $distributed = Request::where('status', 'Released')
-                ->whereBetween('requested_date', [$currentMonthStart, $currentMonthEnd])
+                ->where(function($q) use ($currentMonthStart, $currentMonthEnd) {
+                    $q->whereBetween('requested_date', [$currentMonthStart, $currentMonthEnd]);
+                })->orWhere(function($q) use ($currentMonthStart, $currentMonthEnd) {
+                    $q->where('status', 'Released')
+                      ->whereNull('requested_date')
+                      ->whereBetween('updated_at', [$currentMonthStart, $currentMonthEnd]);
+                })
                 ->sum('quantity');
                 
             $distributedPrevMonth = Request::where('status', 'Released')
-                ->whereBetween('requested_date', [$prevMonthStart, $prevMonthEnd])
+                ->where(function($q) use ($prevMonthStart, $prevMonthEnd) {
+                    $q->whereBetween('requested_date', [$prevMonthStart, $prevMonthEnd]);
+                })->orWhere(function($q) use ($prevMonthStart, $prevMonthEnd) {
+                    $q->where('status', 'Released')
+                      ->whereNull('requested_date')
+                      ->whereBetween('updated_at', [$prevMonthStart, $prevMonthEnd]);
+                })
                 ->sum('quantity');
 
             // Calculate trends
@@ -94,7 +106,13 @@ class DashboardController extends Controller
                 ->first();
             
             $totalRevenue = Request::where('status', 'Released')
-                ->whereBetween('requested_date', [$currentMonthStart, $currentMonthEnd])
+                ->where(function($q) use ($currentMonthStart, $currentMonthEnd) {
+                    $q->whereBetween('requested_date', [$currentMonthStart, $currentMonthEnd]);
+                })->orWhere(function($q) use ($currentMonthStart, $currentMonthEnd) {
+                    $q->where('status', 'Released')
+                      ->whereNull('requested_date')
+                      ->whereBetween('updated_at', [$currentMonthStart, $currentMonthEnd]);
+                })
                 ->sum('total_price');
             
             $revenueTargetValue = $revenueTarget ? $revenueTarget->target_value : 0;
