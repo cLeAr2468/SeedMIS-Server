@@ -7,6 +7,8 @@ use App\Http\Controllers\Api\StaffController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ProductionController;
 use App\Http\Controllers\Api\InventoryController;
+use App\Http\Controllers\Api\RequestController;
+use App\Http\Controllers\Api\TargetController;
 
 /*
 |--------------------------------------------------------------------------
@@ -46,6 +48,18 @@ Route::middleware('api')->group(function () {
     Route::get('inventories/metrics', [InventoryController::class, 'metrics']);
     Route::get('inventories/{id}/batches', [InventoryController::class, 'getBatches']);
     Route::apiResource('inventories', InventoryController::class);
+    
+    // Request routes
+    Route::get('users/search', [RequestController::class, 'searchUsers']);
+    Route::get('requests/available-seedlings', [RequestController::class, 'getAvailableSeedlings']);
+    Route::get('requests/metrics', [RequestController::class, 'metrics']);
+    Route::get('requests/monthly-sales', [RequestController::class, 'getMonthlySales']);
+    Route::apiResource('requests', RequestController::class);
+    
+    // Target routes
+    Route::get('targets/progress', [TargetController::class, 'getProgress']);
+    Route::get('targets/monthly-target-vs-actual', [TargetController::class, 'getMonthlyTargetVsActual']);
+    Route::apiResource('targets', TargetController::class);
 });
 
 Route::get('/health', function () {
