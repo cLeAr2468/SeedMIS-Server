@@ -21,6 +21,7 @@ class Client extends Model
         'municipality',
         'province',
         'password',
+        'status',
     ];
 
     protected $hidden = [

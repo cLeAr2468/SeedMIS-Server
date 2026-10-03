@@ -9,6 +9,9 @@ use App\Http\Controllers\Api\ProductionController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\RequestController;
 use App\Http\Controllers\Api\TargetController;
+use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\ActivityLogController;
 
 /*
 |--------------------------------------------------------------------------
@@ -27,16 +30,24 @@ Route::middleware('api')->group(function () {
     Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('verify-otp', [AuthController::class, 'verifyOtp']);
     Route::post('reset-password', [AuthController::class, 'resetPassword']);
+    
+    // Profile routes
+    Route::get('profile', [AuthController::class, 'getProfile']);
+    Route::put('profile', [AuthController::class, 'updateProfile']);
+    Route::post('change-password', [AuthController::class, 'changePassword']);
 });
 // Protected routes (requires authentication if needed in future)
 Route::middleware('api')->group(function () {
     // Client routes
+    Route::get('clients/next-client-id', [ClientController::class, 'getNextClientId']);
     Route::apiResource('clients', ClientController::class);
     
     // Staff routes
+    Route::get('staff/next-staff-id', [StaffController::class, 'getNextStaffId']);
     Route::apiResource('staff', StaffController::class);
     
     // Production routes
+    Route::get('productions/next-batch-id', [ProductionController::class, 'getNextBatchId']);
     Route::get('productions/metrics', [ProductionController::class, 'metrics']);
     Route::get('productions/history', [ProductionController::class, 'getAllHistory']);
     Route::get('productions/{id}/history', [ProductionController::class, 'getProductionHistory']);
@@ -60,6 +71,19 @@ Route::middleware('api')->group(function () {
     Route::get('targets/progress', [TargetController::class, 'getProgress']);
     Route::get('targets/monthly-target-vs-actual', [TargetController::class, 'getMonthlyTargetVsActual']);
     Route::apiResource('targets', TargetController::class);
+    
+    // Dashboard route
+    Route::get('dashboard', [DashboardController::class, 'getDashboardData']);
+    
+    // Report routes
+    Route::get('reports/distribution', [ReportController::class, 'getDistributionReport']);
+    Route::get('reports/production', [ReportController::class, 'getProductionReport']);
+    Route::get('reports/inventory', [ReportController::class, 'getInventoryReport']);
+    Route::get('reports/summary', [ReportController::class, 'getSummaryReport']);
+    
+    // Activity Log routes
+    Route::get('activity-logs', [ActivityLogController::class, 'index']);
+    Route::get('activity-logs/statistics', [ActivityLogController::class, 'statistics']);
 });
 
 Route::get('/health', function () {

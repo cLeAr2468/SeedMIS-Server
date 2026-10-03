@@ -24,22 +24,16 @@ class DashboardController extends Controller
             // Current month dates
             $currentMonthStart = date('Y-m-01');
             $currentMonthEnd = date('Y-m-t');
-            
-            // Previous month dates for trend comparison
-            $prevMonthStart = date('Y-m-01', strtotime('-1 month'));
-            $prevMonthEnd = date('Y-m-t', strtotime('-1 month'));
 
             // Card Metrics - Current Month
-            // Total Seedlings: sum of created + transferred from production_history
-            $totalSeedlings = DB::table('production_history')
-                ->whereIn('action_type', ['created', 'transferred'])
-                ->whereBetween('changed_at', [$currentMonthStart, $currentMonthEnd])
-                ->sum('new_quantity');
-                
-            $totalSeedlingsPrevMonth = DB::table('production_history')
-                ->whereIn('action_type', ['created', 'transferred'])
-                ->whereBetween('changed_at', [$prevMonthStart, $prevMonthEnd])
-                ->sum('new_quantity');
+            // Seedlings in Production (currently growing)
+            $inProduction = Production::sum('current_quantity');
+
+            // Seedlings in Inventory (ready for distribution)
+            $inInventory = Inventory::sum('total_quantity');
+
+            // Total Seedlings (Production + Inventory)
+            $totalSeedlings = $inProduction + $inInventory;
 
             // Available Stock from inventories
             $availableStock = Inventory::where('status', 'Available')->sum('total_quantity');
@@ -50,27 +44,13 @@ class DashboardController extends Controller
             // Distributed - current month only
             $distributed = Request::where('status', 'Released')
                 ->where(function($q) use ($currentMonthStart, $currentMonthEnd) {
-                    $q->whereBetween('requested_date', [$currentMonthStart, $currentMonthEnd]);
-                })->orWhere(function($q) use ($currentMonthStart, $currentMonthEnd) {
-                    $q->where('status', 'Released')
-                      ->whereNull('requested_date')
-                      ->whereBetween('updated_at', [$currentMonthStart, $currentMonthEnd]);
+                    $q->whereBetween('requested_date', [$currentMonthStart, $currentMonthEnd])
+                      ->orWhere(function($subQ) use ($currentMonthStart, $currentMonthEnd) {
+                          $subQ->whereNull('requested_date')
+                               ->whereBetween('updated_at', [$currentMonthStart, $currentMonthEnd]);
+                      });
                 })
                 ->sum('quantity');
-                
-            $distributedPrevMonth = Request::where('status', 'Released')
-                ->where(function($q) use ($prevMonthStart, $prevMonthEnd) {
-                    $q->whereBetween('requested_date', [$prevMonthStart, $prevMonthEnd]);
-                })->orWhere(function($q) use ($prevMonthStart, $prevMonthEnd) {
-                    $q->where('status', 'Released')
-                      ->whereNull('requested_date')
-                      ->whereBetween('updated_at', [$prevMonthStart, $prevMonthEnd]);
-                })
-                ->sum('quantity');
-
-            // Calculate trends
-            $totalSeedlingsTrend = $this->calculateTrend($totalSeedlings, $totalSeedlingsPrevMonth);
-            $distributedTrend = $this->calculateTrend($distributed, $distributedPrevMonth);
 
             // Target Progress (Annual Production)
             $annualTarget = Target::active()
@@ -187,22 +167,12 @@ class DashboardController extends Controller
                 'success' => true,
                 'data' => [
                     'card_metrics' => [
-                        'total_seedlings' => [
-                            'value' => (float) $totalSeedlings,
-                            'trend' => $totalSeedlingsTrend,
-                        ],
-                        'available_stock' => [
-                            'value' => (float) $availableStock,
-                            'trend' => null, // No trend for stock
-                        ],
-                        'pending_requests' => [
-                            'value' => $pendingRequests,
-                            'trend' => null, // No trend for pending
-                        ],
-                        'distributed' => [
-                            'value' => (float) $distributed,
-                            'trend' => $distributedTrend,
-                        ],
+                        'in_production' => (float) $inProduction,
+                        'in_inventory' => (float) $inInventory,
+                        'total_seedlings' => (float) $totalSeedlings,
+                        'available_stock' => (float) $availableStock,
+                        'pending_requests' => $pendingRequests,
+                        'distributed' => (float) $distributed,
                     ],
                     'target_progress' => [
                         'annual_production' => [
@@ -235,28 +205,4 @@ class DashboardController extends Controller
         }
     }
     
-    /**
-     * Calculate trend comparison
-     */
-    private function calculateTrend($current, $previous)
-    {
-        if ($previous == 0) {
-            if ($current > 0) {
-                return [
-                    'direction' => 'up',
-                    'percentage' => 100,
-                    'label' => 'from last month'
-                ];
-            }
-            return null;
-        }
-        
-        $percentageChange = round((($current - $previous) / $previous) * 100, 1);
-        
-        return [
-            'direction' => $percentageChange >= 0 ? 'up' : 'down',
-            'percentage' => abs($percentageChange),
-            'label' => 'from last month'
-        ];
-    }
 }

@@ -10,6 +10,7 @@ use Illuminate\Http\Request as HttpRequest;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use App\Services\ActivityLogService;
 
 class RequestController extends Controller
 {
@@ -148,6 +149,8 @@ class RequestController extends Controller
                 'purpose' => 'required|string',
                 'contact_number' => 'nullable|string|max:20',
                 'requested_date' => 'required|date',
+                'created_by_user_type' => 'nullable|string|in:admin,staff',
+                'created_by_user_id' => 'nullable|string', // Staff ID or Admin ID
             ]);
 
             if ($validator->fails()) {
@@ -156,6 +159,20 @@ class RequestController extends Controller
                     'message' => 'Validation failed',
                     'errors' => $validator->errors()
                 ], 422);
+            }
+
+            // Check if staff account is inactive
+            $createdByUserType = $request->input('created_by_user_type');
+            $createdByUserId = $request->input('created_by_user_id');
+            
+            if ($createdByUserType === 'staff' && $createdByUserId) {
+                $staff = \App\Models\Staff::where('staff_id', $createdByUserId)->first();
+                if ($staff && $staff->status === 'Inactive') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Your account is inactive. You cannot process transactions. Please contact administrator.'
+                    ], 403);
+                }
             }
 
             // Get inventory item to check availability and get price
@@ -195,6 +212,12 @@ class RequestController extends Controller
             $inventory->reserved_quantity += $quantity;
             $inventory->save();
 
+            // Determine initial status: if created by admin/staff, auto-approve
+            $createdByUserType = $request->input('created_by_user_type');
+            $initialStatus = ($createdByUserType === 'admin' || $createdByUserType === 'staff') 
+                ? 'Approved' 
+                : 'Pending';
+
             // Create the request
             $requestData = Request::create([
                 'client_id' => $request->client_id,
@@ -205,15 +228,19 @@ class RequestController extends Controller
                 'requested_date' => $request->requested_date,
                 'price_per_unit' => $pricePerUnit,
                 'total_price' => $totalPrice,
-                'status' => 'Pending',
+                'status' => $initialStatus,
             ]);
 
             // Load the client relationship
             $requestData->load('client:id,first_name,middle_name,last_name,email,organization');
 
+            $message = $initialStatus === 'Approved' 
+                ? 'Request created and automatically approved. Quantity reserved from inventory.'
+                : 'Request created successfully. Quantity reserved from inventory.';
+
             return response()->json([
                 'success' => true,
-                'message' => 'Request created successfully. Quantity reserved from inventory.',
+                'message' => $message,
                 'data' => [
                     'id' => $requestData->id,
                     'client_id' => $requestData->client_id,
@@ -282,6 +309,20 @@ class RequestController extends Controller
     public function update(HttpRequest $httpRequest, $id)
     {
         try {
+            // Check if staff account is inactive before allowing update
+            $userId = $httpRequest->input('user_id');
+            $userType = $httpRequest->input('user_type');
+            
+            if ($userType === 'staff' && $userId) {
+                $staff = \App\Models\Staff::where('staff_id', $userId)->first();
+                if ($staff && $staff->status === 'Inactive') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Your account is inactive. You cannot process transactions. Please contact administrator.'
+                    ], 403);
+                }
+            }
+            
             $request = Request::findOrFail($id);
             $oldStatus = $request->status;
 
@@ -361,6 +402,27 @@ class RequestController extends Controller
 
             $request->update($updateData);
             $request->load('client');
+
+            // Log activity if status changed
+            if (isset($updateData['status']) && $oldStatus !== $updateData['status']) {
+                $userId = $httpRequest->input('user_id');
+                $userType = $httpRequest->input('user_type');
+                
+                if ($userId && $userType) {
+                    $clientName = $request->client ? 
+                        trim($request->client->first_name . ' ' . $request->client->last_name) : 
+                        'Unknown Client';
+                    
+                    ActivityLogService::logRequestStatusChange(
+                        $userId,
+                        $userType,
+                        $request->id,
+                        $oldStatus,
+                        $updateData['status'],
+                        $clientName
+                    );
+                }
+            }
 
             return response()->json([
                 'success' => true,
@@ -452,29 +514,66 @@ class RequestController extends Controller
     /**
      * Get monthly sales (total price of Released requests for current month).
      */
-    public function getMonthlySales()
+    public function getMonthlySales(HttpRequest $httpRequest)
     {
         try {
+            $validator = Validator::make($httpRequest->all(), [
+                'start_date' => 'nullable|date',
+                'end_date' => 'nullable|date',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $startDate = $httpRequest->input('start_date');
+            $endDate = $httpRequest->input('end_date');
+            
             $currentYear = date('Y');
             $currentMonth = date('m');
             $currentYearMonth = date('Y-m');
 
-            $monthlySales = Request::where('status', 'Released')
-                ->whereYear('updated_at', $currentYear)
-                ->whereMonth('updated_at', $currentMonth)
-                ->sum('total_price');
+            $query = Request::where('status', 'Released');
 
-            $count = Request::where('status', 'Released')
-                ->whereYear('updated_at', $currentYear)
-                ->whereMonth('updated_at', $currentMonth)
-                ->count();
+            if ($startDate && $endDate) {
+                // Custom date range - use whereBetween
+                $query->where(function($q) use ($startDate, $endDate) {
+                    $q->where(function($subQ) use ($startDate, $endDate) {
+                        $subQ->whereBetween('requested_date', [$startDate, $endDate]);
+                    })->orWhere(function($subQ) use ($startDate, $endDate) {
+                        $subQ->whereNull('requested_date')
+                             ->whereBetween('updated_at', [$startDate, $endDate]);
+                    });
+                });
+            } else {
+                // Default: current month
+                $query->where(function($q) use ($currentYear, $currentMonth) {
+                    $q->where(function($subQ) use ($currentYear, $currentMonth) {
+                        $subQ->whereYear('requested_date', $currentYear)
+                             ->whereMonth('requested_date', $currentMonth);
+                    })->orWhere(function($subQ) use ($currentYear, $currentMonth) {
+                        $subQ->whereNull('requested_date')
+                             ->whereYear('updated_at', $currentYear)
+                             ->whereMonth('updated_at', $currentMonth);
+                    });
+                });
+            }
+
+            $monthlySales = $query->sum('total_price');
+            $count = $query->count();
 
             return response()->json([
                 'success' => true,
                 'data' => [
                     'monthly_sales' => (float) $monthlySales,
                     'month' => $currentYearMonth,
-                    'count' => $count
+                    'count' => $count,
+                    'start_date' => $startDate,
+                    'end_date' => $endDate,
                 ]
             ]);
         } catch (\Exception $e) {

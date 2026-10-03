@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Inventory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use App\Services\ActivityLogService;
 
 class InventoryController extends Controller
 {
@@ -66,12 +67,13 @@ class InventoryController extends Controller
         try {
             $validator = Validator::make($request->all(), [
                 'seedling_type' => 'required|string|unique:inventories,seedling_type|max:255',
-                'classification' => 'required|in:Crafted,Seedling',
+                'classification' => 'required|in:Grafted,Seedling',
                 'total_quantity' => 'required|integer|min:0',
                 'price_per_unit' => 'required|numeric|min:0',
                 'unit' => 'nullable|string|max:50',
                 'min_stock_level' => 'nullable|integer|min:0',
                 'location' => 'nullable|string|max:255',
+                'status' => 'nullable|in:Available,Not Available',
                 'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
             ]);
 
@@ -132,16 +134,31 @@ class InventoryController extends Controller
     public function update(Request $request, string $id)
     {
         try {
+            // Check if staff account is inactive
+            $userId = $request->input('user_id');
+            $userType = $request->input('user_type');
+            
+            if ($userType === 'staff' && $userId) {
+                $staff = \App\Models\Staff::where('staff_id', $userId)->first();
+                if ($staff && $staff->status === 'Inactive') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Your account is inactive. You cannot process transactions. Please contact administrator.'
+                    ], 403);
+                }
+            }
+            
             $inventory = Inventory::findOrFail($id);
 
             $validator = Validator::make($request->all(), [
                 'seedling_type' => 'sometimes|string|unique:inventories,seedling_type,' . $id . '|max:255',
-                'classification' => 'sometimes|in:Crafted,Seedling',
+                'classification' => 'sometimes|in:Grafted,Seedling',
                 'total_quantity' => 'sometimes|integer|min:0',
                 'price_per_unit' => 'sometimes|numeric|min:0',
                 'unit' => 'nullable|string|max:50',
                 'min_stock_level' => 'nullable|integer|min:0',
                 'location' => 'nullable|string|max:255',
+                'status' => 'sometimes|in:Available,Not Available',
                 'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
             ]);
 
@@ -152,6 +169,11 @@ class InventoryController extends Controller
                     'errors' => $validator->errors()
                 ], 422);
             }
+
+            // Store old values for activity logging
+            $oldPrice = $inventory->price_per_unit;
+            $oldQuantity = $inventory->total_quantity;
+            $oldStatus = $inventory->status;
 
             $data = $request->except('image');
 
@@ -167,6 +189,40 @@ class InventoryController extends Controller
             }
 
             $inventory->update($data);
+
+            // Log activity if user info is provided
+            $userId = $request->input('user_id');
+            $userType = $request->input('user_type');
+            
+            if ($userId && $userType) {
+                $details = [];
+                
+                if ($request->has('price_per_unit') && $oldPrice != $request->price_per_unit) {
+                    $details['old_price'] = $oldPrice;
+                    $details['new_price'] = $request->price_per_unit;
+                }
+                
+                if ($request->has('total_quantity') && $oldQuantity != $request->total_quantity) {
+                    $details['old_quantity'] = $oldQuantity;
+                    $details['new_quantity'] = $request->total_quantity;
+                }
+                
+                if ($request->has('status') && $oldStatus != $request->status) {
+                    $details['old_status'] = $oldStatus;
+                    $details['new_status'] = $request->status;
+                }
+                
+                // Only log if something actually changed
+                if (!empty($details)) {
+                    ActivityLogService::logInventory(
+                        $userId,
+                        $userType,
+                        'updated',
+                        $inventory->seedling_type,
+                        $details
+                    );
+                }
+            }
 
             // Check if inventory is now low stock and send email notification
             $this->checkLowStockAndNotify($inventory->fresh());

@@ -23,6 +23,7 @@ class Staff extends Model
         'municipality',
         'province',
         'password',
+        'status',
     ];
 
     protected $hidden = [

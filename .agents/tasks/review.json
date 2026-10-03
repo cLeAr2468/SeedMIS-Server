@@ -1,0 +1,9 @@
+{
+  "verdict": "CHANGES_REQUESTED",
+  "findings": [
+    "Production chart filtering gap — stage_update aggregation in production chart queries `new_stage = \"Ready\"` without checking `action_type = 'stage_update'`, which risks double-counting seedlings that were transferred with new_stage inadvertently set. Add `AND action_type = 'stage_update'` to the WHERE clause in DashboardController.php line 151.",
+    "CardMetrics trend logic asymmetry — total_seedlings metric uses changed_at with year-only filtering (all months), while distributed metric uses requested_date with month-specific filtering. Trend percentages compare mismatched windows: current month distributed vs current month previous, but year-to-date seedlings vs previous-month-only seedlings. Align both to use the same time boundary: whereBetween with month start/end dates.",
+    "Inconsistent date column fallback — DashboardController queries only check requested_date for Released requests, but RequestController and TargetController fall back to updated_at when requested_date is null. Requests released before requested_date column was populated won't appear in dashboard metrics but will appear in the distribution card and target progress. Add the same fallback logic to DashboardController lines 60-62 and 163-165."
+  ],
+  "reviewDoc": "c:\\xampp\\htdocs\\SeedMIS-Server\\.agents\\tasks\\dashboard-review.md"
+}

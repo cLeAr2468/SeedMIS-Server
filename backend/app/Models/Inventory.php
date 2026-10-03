@@ -15,6 +15,7 @@ class Inventory extends Model
         'unit',
         'min_stock_level',
         'location',
+        'status',
         'image_url',
     ];
 

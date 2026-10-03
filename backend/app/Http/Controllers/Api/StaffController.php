@@ -11,6 +11,36 @@ use Illuminate\Support\Facades\Validator;
 class StaffController extends Controller
 {
     /**
+     * Generate next staff ID
+     */
+    public function getNextStaffId()
+    {
+        try {
+            $lastStaff = Staff::orderBy('id', 'desc')->first();
+            
+            if ($lastStaff && preg_match('/STF-(\d+)/', $lastStaff->staff_id, $matches)) {
+                $lastNumber = intval($matches[1]);
+                $nextNumber = $lastNumber + 1;
+            } else {
+                $nextNumber = 1;
+            }
+            
+            $staffId = 'STF-' . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+            
+            return response()->json([
+                'success' => true,
+                'data' => ['staff_id' => $staffId]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate staff ID',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Display a listing of the resource.
      */
     public function index()
@@ -49,7 +79,17 @@ class StaffController extends Controller
                 'barangay' => 'required|string|max:255',
                 'municipality' => 'required|string|max:255',
                 'province' => 'required|string|max:255',
-                'password' => 'required|string|min:8|confirmed',
+                'password' => [
+                    'required',
+                    'string',
+                    'min:8',
+                    'confirmed',
+                    'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]+$/'
+                ],
+            ], [
+                'password.regex' => 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&#)',
+                'password.min' => 'Password must be at least 8 characters long',
+                'password.confirmed' => 'Password confirmation does not match',
             ]);
 
             if ($validator->fails()) {

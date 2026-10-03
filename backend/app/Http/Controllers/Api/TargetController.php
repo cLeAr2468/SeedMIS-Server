@@ -275,26 +275,74 @@ class TargetController extends Controller
     /**
      * Get monthly target vs actual distribution progress.
      */
-    public function getMonthlyTargetVsActual()
+    public function getMonthlyTargetVsActual(HttpRequest $request)
     {
         try {
+            $validator = Validator::make($request->all(), [
+                'start_date' => 'nullable|date',
+                'end_date' => 'nullable|date',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $startDate = $request->input('start_date');
+            $endDate = $request->input('end_date');
+            
             $currentYearMonth = date('Y-m');
             $currentYear = date('Y');
             $currentMonth = date('m');
 
+            // Determine which period to look up for target
+            if ($startDate) {
+                // Use the start_date month for target lookup
+                $targetPeriod = date('Y-m', strtotime($startDate));
+            } else {
+                // Use current month
+                $targetPeriod = $currentYearMonth;
+            }
+
             // Get the monthly distribution target
             $monthlyTarget = Target::active()
                 ->ofType('monthly_distribution')
-                ->forPeriod($currentYearMonth)
+                ->forPeriod($targetPeriod)
                 ->first();
 
             $targetValue = $monthlyTarget ? $monthlyTarget->target_value : 0;
 
-            // Get actual distributed (sum of quantity from Released requests in current month)
-            $actualDistributed = Request::where('status', 'Released')
-                ->whereYear('updated_at', $currentYear)
-                ->whereMonth('updated_at', $currentMonth)
-                ->sum('quantity');
+            // Build query for actual distributed
+            $query = Request::where('status', 'Released');
+
+            if ($startDate && $endDate) {
+                // Custom date range
+                $query->where(function($q) use ($startDate, $endDate) {
+                    $q->where(function($subQ) use ($startDate, $endDate) {
+                        $subQ->whereBetween('requested_date', [$startDate, $endDate]);
+                    })->orWhere(function($subQ) use ($startDate, $endDate) {
+                        $subQ->whereNull('requested_date')
+                             ->whereBetween('updated_at', [$startDate, $endDate]);
+                    });
+                });
+            } else {
+                // Default: current month
+                $query->where(function($q) use ($currentYear, $currentMonth) {
+                    $q->where(function($subQ) use ($currentYear, $currentMonth) {
+                        $subQ->whereYear('requested_date', $currentYear)
+                             ->whereMonth('requested_date', $currentMonth);
+                    })->orWhere(function($subQ) use ($currentYear, $currentMonth) {
+                        $subQ->whereNull('requested_date')
+                             ->whereYear('updated_at', $currentYear)
+                             ->whereMonth('updated_at', $currentMonth);
+                    });
+                });
+            }
+
+            $actualDistributed = $query->sum('quantity');
 
             // Calculate remaining and percentage
             $remaining = max(0, $targetValue - $actualDistributed);
@@ -307,7 +355,9 @@ class TargetController extends Controller
                     'actual' => (float) $actualDistributed,
                     'remaining' => (float) $remaining,
                     'percentage' => (float) $percentage,
-                    'month' => $currentYearMonth
+                    'month' => $targetPeriod,
+                    'start_date' => $startDate,
+                    'end_date' => $endDate,
                 ]
             ]);
         } catch (\Exception $e) {

@@ -8,6 +8,7 @@ use App\Services\ProductionHistoryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
+use App\Services\ActivityLogService;
 
 class ProductionController extends Controller
 {
@@ -28,6 +29,52 @@ class ProductionController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to retrieve production batches',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Generate next batch ID based on last production batch_id number
+     * Checks both productions table and production_history table to ensure continuity
+     */
+    public function getNextBatchId()
+    {
+        try {
+            // Get the last batch ID from productions table
+            $lastProduction = Production::orderBy('id', 'desc')->first();
+            $lastProductionNumber = 0;
+            
+            if ($lastProduction && preg_match('/BAT-(\d+)/', $lastProduction->batch_id, $matches)) {
+                $lastProductionNumber = intval($matches[1]);
+            }
+            
+            // Get the last batch ID from production_history table
+            $lastHistory = \App\Models\ProductionHistory::orderBy('id', 'desc')->first();
+            $lastHistoryNumber = 0;
+            
+            if ($lastHistory && preg_match('/BAT-(\d+)/', $lastHistory->batch_id, $matches)) {
+                $lastHistoryNumber = intval($matches[1]);
+            }
+            
+            // Use the highest number from both tables
+            $lastNumber = max($lastProductionNumber, $lastHistoryNumber);
+            $nextNumber = $lastNumber + 1;
+            
+            // Format: BAT-0001, BAT-0002, etc.
+            $batchId = 'BAT-' . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+            
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'batch_id' => $batchId
+                ],
+                'message' => 'Next batch ID generated successfully'
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate batch ID',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -133,6 +180,20 @@ class ProductionController extends Controller
     public function updateStage(Request $request, string $id)
     {
         try {
+            // Check if staff account is inactive
+            $userId = $request->input('user_id');
+            $userType = $request->input('user_type');
+            
+            if ($userType === 'staff' && $userId) {
+                $staff = \App\Models\Staff::where('staff_id', $userId)->first();
+                if ($staff && $staff->status === 'Inactive') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Your account is inactive. You cannot process transactions. Please contact administrator.'
+                    ], 403);
+                }
+            }
+            
             $production = Production::findOrFail($id);
 
             $validator = Validator::make($request->all(), [
@@ -166,6 +227,25 @@ class ProductionController extends Controller
                 'new_quantity' => $request->current_quantity,
             ], $request->notes);
 
+            // Log activity
+            $userId = $request->input('user_id');
+            $userType = $request->input('user_type');
+            
+            if ($userId && $userType) {
+                ActivityLogService::logProduction(
+                    $userId,
+                    $userType,
+                    'stage_updated',
+                    $production->batch_id,
+                    [
+                        'old_stage' => $oldStage,
+                        'new_stage' => $request->stage,
+                        'old_quantity' => $oldQuantity,
+                        'new_quantity' => $request->current_quantity
+                    ]
+                );
+            }
+
             return response()->json([
                 'success' => true,
                 'data' => $production->fresh(),
@@ -187,6 +267,20 @@ class ProductionController extends Controller
     public function transferToInventory(Request $request, string $id)
     {
         try {
+            // Check if staff account is inactive
+            $userId = $request->input('user_id');
+            $userType = $request->input('user_type');
+            
+            if ($userType === 'staff' && $userId) {
+                $staff = \App\Models\Staff::where('staff_id', $userId)->first();
+                if ($staff && $staff->status === 'Inactive') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Your account is inactive. You cannot process transactions. Please contact administrator.'
+                    ], 403);
+                }
+            }
+            
             $production = Production::findOrFail($id);
 
             if ($production->stage !== 'Ready') {
@@ -231,6 +325,7 @@ class ProductionController extends Controller
                     'unit' => 'pieces',
                     'min_stock_level' => 0,
                     'location' => $production->location,
+                    'status' => 'Available',
                     'image_url' => $production->image_url,
                 ]);
             }
@@ -255,6 +350,25 @@ class ProductionController extends Controller
             ProductionHistoryService::log($production, 'transferred', [
                 'new_quantity' => $production->current_quantity,
             ], "Transferred to inventory (Batch: {$batchNumber})");
+
+            // Log activity
+            $userId = $request->input('user_id');
+            $userType = $request->input('user_type');
+            
+            if ($userId && $userType) {
+                ActivityLogService::logProduction(
+                    $userId,
+                    $userType,
+                    'transferred',
+                    $production->batch_id,
+                    [
+                        'seedling_type' => $production->seedling_type,
+                        'quantity' => $production->current_quantity,
+                        'inventory_batch' => $batchNumber,
+                        'to_inventory_id' => $inventory->id
+                    ]
+                );
+            }
 
             // Delete production after successful transfer
             $production->delete();
@@ -332,11 +446,25 @@ class ProductionController extends Controller
     public function store(Request $request)
     {
         try {
+            // Check if staff account is inactive
+            $userId = $request->input('user_id');
+            $userType = $request->input('user_type');
+            
+            if ($userType === 'staff' && $userId) {
+                $staff = \App\Models\Staff::where('staff_id', $userId)->first();
+                if ($staff && $staff->status === 'Inactive') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Your account is inactive. You cannot process transactions. Please contact administrator.'
+                    ], 403);
+                }
+            }
+            
             $validator = Validator::make($request->all(), [
                 'batch_id' => 'required|string|unique:productions,batch_id|max:255',
                 'seedling_type' => 'required|string|max:255',
                 'scientific_name' => 'nullable|string|max:255',
-                'classification' => 'required|in:Crafted,Seedling',
+                'classification' => 'required|in:Grafted,Seedling',
                 'date_sown' => 'required|date',
                 'expected_ready' => 'required|date|after:date_sown',
                 'quantity_sown' => 'required|integer|min:1',
@@ -373,6 +501,25 @@ class ProductionController extends Controller
                 'new_stage' => $production->stage,
                 'new_quantity' => $production->current_quantity,
             ], 'Production batch created');
+
+            // Log activity
+            $userId = $request->input('user_id');
+            $userType = $request->input('user_type');
+            
+            if ($userId && $userType) {
+                ActivityLogService::logProduction(
+                    $userId,
+                    $userType,
+                    'created',
+                    $production->batch_id,
+                    [
+                        'seedling_type' => $production->seedling_type,
+                        'classification' => $production->classification,
+                        'quantity_sown' => $production->quantity_sown,
+                        'stage' => $production->stage
+                    ]
+                );
+            }
 
             return response()->json([
                 'success' => true,
@@ -423,7 +570,7 @@ class ProductionController extends Controller
                 'batch_id' => 'sometimes|string|unique:productions,batch_id,' . $id . '|max:255',
                 'seedling_type' => 'sometimes|string|max:255',
                 'scientific_name' => 'nullable|string|max:255',
-                'classification' => 'sometimes|in:Crafted,Seedling',
+                'classification' => 'sometimes|in:Grafted,Seedling',
                 'date_sown' => 'sometimes|date',
                 'expected_ready' => 'sometimes|date',
                 'quantity_sown' => 'sometimes|integer|min:1',

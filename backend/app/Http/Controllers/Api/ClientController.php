@@ -12,6 +12,36 @@ use Illuminate\Validation\ValidationException;
 class ClientController extends Controller
 {
     /**
+     * Generate next client ID
+     */
+    public function getNextClientId()
+    {
+        try {
+            $lastClient = Client::orderBy('id', 'desc')->first();
+            
+            if ($lastClient && preg_match('/CLT-(\d+)/', $lastClient->client_id, $matches)) {
+                $lastNumber = intval($matches[1]);
+                $nextNumber = $lastNumber + 1;
+            } else {
+                $nextNumber = 1;
+            }
+            
+            $clientId = 'CLT-' . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+            
+            return response()->json([
+                'success' => true,
+                'data' => ['client_id' => $clientId]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate client ID',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Display a listing of the resource.
      */
     public function index()
@@ -50,7 +80,17 @@ class ClientController extends Controller
                 'barangay' => 'required|string|max:255',
                 'municipality' => 'required|string|max:255',
                 'province' => 'required|string|max:255',
-                'password' => 'required|string|min:8|confirmed',
+                'password' => [
+                    'required',
+                    'string',
+                    'min:8',
+                    'confirmed',
+                    'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]+$/'
+                ],
+            ], [
+                'password.regex' => 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&#)',
+                'password.min' => 'Password must be at least 8 characters long',
+                'password.confirmed' => 'Password confirmation does not match',
             ]);
 
             if ($validator->fails()) {

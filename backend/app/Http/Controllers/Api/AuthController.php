@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use App\Services\ActivityLogService;
 
 class AuthController extends Controller
 {
@@ -36,6 +37,9 @@ class AuthController extends Controller
             // Check admin first
             $admin = Admin::where('email', $email)->first();
             if ($admin && Hash::check($password, $admin->password)) {
+                // Log login activity
+                ActivityLogService::logLogin($admin->id, 'admin', $admin->name);
+                
                 return response()->json([
                     'success' => true,
                     'message' => 'Login successful',
@@ -54,16 +58,22 @@ class AuthController extends Controller
             // Check staff
             $staff = Staff::where('email', $email)->first();
             if ($staff && Hash::check($password, $staff->password)) {
+                $staffName = trim($staff->first_name . ' ' . $staff->last_name);
+                
+                // Log login activity - use staff_id instead of numeric id
+                ActivityLogService::logLogin($staff->staff_id, 'staff', $staffName);
+                
                 return response()->json([
                     'success' => true,
                     'message' => 'Login successful',
                     'data' => [
                         'user_type' => 'staff',
                         'user' => [
-                            'id' => $staff->id,
+                            'id' => $staff->staff_id, // Use staff_id for consistency
                             'email' => $staff->email,
-                            'name' => $staff->first_name . ' ' . $staff->last_name,
+                            'name' => $staffName,
                             'position' => $staff->position,
+                            'status' => $staff->status,
                         ]
                     ]
                 ], 200);
@@ -271,6 +281,309 @@ class AuthController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Password reset failed',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getProfile(Request $request)
+    {
+        try {
+            $userId = $request->input('user_id');
+            $userType = $request->input('user_type');
+
+            if (!$userId || !$userType) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User ID and user type are required'
+                ], 400);
+            }
+
+            if ($userType === 'admin') {
+                $user = Admin::find($userId);
+                if (!$user) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Admin not found'
+                    ], 404);
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'role' => $user->role,
+                        'created_at' => $user->created_at,
+                        'user_type' => 'admin'
+                    ]
+                ], 200);
+            } else {
+                // Staff - user_id might be staff_id (STF-0001) or numeric id
+                $user = Staff::where('staff_id', $userId)->first();
+                if (!$user) {
+                    // Fallback: try numeric id
+                    $user = Staff::find($userId);
+                }
+                
+                if (!$user) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Staff not found'
+                    ], 404);
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'id' => $user->staff_id, // Always return staff_id
+                        'staff_id' => $user->staff_id,
+                        'first_name' => $user->first_name,
+                        'middle_name' => $user->middle_name,
+                        'last_name' => $user->last_name,
+                        'name' => trim($user->first_name . ' ' . ($user->middle_name ? $user->middle_name . ' ' : '') . $user->last_name),
+                        'email' => $user->email,
+                        'position' => $user->position,
+                        'contact_number' => $user->contact_number,
+                        'barangay' => $user->barangay,
+                        'municipality' => $user->municipality,
+                        'province' => $user->province,
+                        'status' => $user->status,
+                        'created_at' => $user->created_at,
+                        'user_type' => 'staff'
+                    ]
+                ], 200);
+            }
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get profile',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function updateProfile(Request $request)
+    {
+        try {
+            $userId = $request->input('user_id');
+            $userType = $request->input('user_type');
+
+            if (!$userId || !$userType) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User ID and user type are required'
+                ], 400);
+            }
+
+            if ($userType === 'admin') {
+                $user = Admin::find($userId);
+                if (!$user) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Admin not found'
+                    ], 404);
+                }
+
+                $validator = Validator::make($request->all(), [
+                    'name' => 'sometimes|string|max:255',
+                    'email' => 'sometimes|email|unique:admins,email,' . $userId,
+                ]);
+
+                if ($validator->fails()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Validation failed',
+                        'errors' => $validator->errors()
+                    ], 422);
+                }
+
+                $user->update($request->only(['name', 'email']));
+
+                // Log activity - pass only the fields that were actually sent
+                $changedFields = [];
+                if ($request->has('name')) {
+                    $changedFields['name'] = $user->name;
+                }
+                if ($request->has('email')) {
+                    $changedFields['email'] = $user->email;
+                }
+
+                ActivityLogService::logProfile($userId, $userType, 'updated', $changedFields);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Profile updated successfully',
+                    'data' => [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'role' => $user->role,
+                        'user_type' => 'admin'
+                    ]
+                ], 200);
+            } else {
+                // Staff - user_id might be staff_id (STF-0001) or numeric id
+                $user = Staff::where('staff_id', $userId)->first();
+                if (!$user) {
+                    // Fallback: try numeric id
+                    $user = Staff::find($userId);
+                }
+                
+                if (!$user) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Staff not found'
+                    ], 404);
+                }
+
+                $validator = Validator::make($request->all(), [
+                    'first_name' => 'sometimes|string|max:255',
+                    'middle_name' => 'nullable|string|max:255',
+                    'last_name' => 'sometimes|string|max:255',
+                    'email' => 'sometimes|email|unique:staff,email,' . $user->id,
+                    'position' => 'sometimes|string|max:255',
+                    'contact_number' => 'sometimes|string|max:20',
+                    'barangay' => 'sometimes|string|max:255',
+                    'municipality' => 'sometimes|string|max:255',
+                    'province' => 'sometimes|string|max:255',
+                ]);
+
+                if ($validator->fails()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Validation failed',
+                        'errors' => $validator->errors()
+                    ], 422);
+                }
+
+                $user->update($request->only([
+                    'first_name', 'middle_name', 'last_name', 
+                    'email', 'position', 'contact_number',
+                    'barangay', 'municipality', 'province'
+                ]));
+
+                // Log activity - use staff_id and pass only fields that were sent
+                $changedFields = $request->only([
+                    'first_name', 'middle_name', 'last_name', 
+                    'email', 'position', 'contact_number',
+                    'barangay', 'municipality', 'province'
+                ]);
+
+                ActivityLogService::logProfile($user->staff_id, $userType, 'updated', $changedFields);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Profile updated successfully',
+                    'data' => [
+                        'id' => $user->staff_id, // Return staff_id
+                        'staff_id' => $user->staff_id,
+                        'first_name' => $user->first_name,
+                        'middle_name' => $user->middle_name,
+                        'last_name' => $user->last_name,
+                        'name' => trim($user->first_name . ' ' . ($user->middle_name ? $user->middle_name . ' ' : '') . $user->last_name),
+                        'email' => $user->email,
+                        'position' => $user->position,
+                        'contact_number' => $user->contact_number,
+                        'barangay' => $user->barangay,
+                        'municipality' => $user->municipality,
+                        'province' => $user->province,
+                        'user_type' => 'staff'
+                    ]
+                ], 200);
+            }
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update profile',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function changePassword(Request $request)
+    {
+        try {
+            $userId = $request->input('user_id');
+            $userType = $request->input('user_type');
+
+            if (!$userId || !$userType) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User ID and user type are required'
+                ], 400);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'current_password' => 'required|string',
+                'new_password' => [
+                    'required',
+                    'string',
+                    'min:8',
+                    'confirmed',
+                    'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]+$/'
+                ],
+            ], [
+                'new_password.regex' => 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&#)',
+                'new_password.min' => 'Password must be at least 8 characters long',
+                'new_password.confirmed' => 'Password confirmation does not match',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            if ($userType === 'admin') {
+                $user = Admin::find($userId);
+            } else {
+                // Staff - user_id might be staff_id (STF-0001) or numeric id
+                $user = Staff::where('staff_id', $userId)->first();
+                if (!$user) {
+                    // Fallback: try numeric id
+                    $user = Staff::find($userId);
+                }
+            }
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            // Verify current password
+            if (!Hash::check($request->current_password, $user->password)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Current password is incorrect'
+                ], 401);
+            }
+
+            // Update password
+            $user->update([
+                'password' => Hash::make($request->new_password)
+            ]);
+
+            // Log activity - use staff_id for staff users
+            $logUserId = ($userType === 'staff' && isset($user->staff_id)) ? $user->staff_id : $userId;
+            ActivityLogService::logProfile($logUserId, $userType, 'password_changed');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Password changed successfully'
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to change password',
                 'error' => $e->getMessage()
             ], 500);
         }
