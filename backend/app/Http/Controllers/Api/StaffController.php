@@ -4,9 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Staff;
+use App\Models\Client;
+use App\Models\Admin;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 
 class StaffController extends Controller
 {
@@ -68,12 +71,27 @@ class StaffController extends Controller
     public function store(Request $request)
     {
         try {
+            // Check if email exists in staff, clients, or admins table
+            $emailExistsInStaff = Staff::where('email', $request->email)->exists();
+            $emailExistsInClient = Client::where('email', $request->email)->exists();
+            $emailExistsInAdmin = Admin::where('email', $request->email)->exists();
+
+            if ($emailExistsInStaff || $emailExistsInClient || $emailExistsInAdmin) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => [
+                        'email' => ['This email is already registered in the system.']
+                    ]
+                ], 422);
+            }
+
             $validator = Validator::make($request->all(), [
                 'staff_id' => 'required|string|unique:staff,staff_id|max:255',
                 'first_name' => 'required|string|max:255',
                 'middle_name' => 'nullable|string|max:255',
                 'last_name' => 'required|string|max:255',
-                'email' => 'required|email|unique:staff,email|max:255',
+                'email' => 'required|email|max:255',
                 'position' => 'required|string|max:255',
                 'contact_number' => 'required|string|max:20',
                 'barangay' => 'required|string|max:255',
