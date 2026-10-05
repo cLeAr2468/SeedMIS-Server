@@ -98,7 +98,7 @@ class ClientController extends Controller
                 'municipality' => 'required|string|max:255',
                 'province' => 'required|string|max:255',
                 'password' => [
-                    'required',
+                    'nullable',
                     'string',
                     'min:8',
                     'confirmed',
@@ -118,7 +118,7 @@ class ClientController extends Controller
                 ], 422);
             }
 
-            $client = Client::create([
+            $clientData = [
                 'client_id' => $request->client_id,
                 'organization' => $request->organization,
                 'first_name' => $request->first_name,
@@ -129,8 +129,14 @@ class ClientController extends Controller
                 'barangay' => $request->barangay,
                 'municipality' => $request->municipality,
                 'province' => $request->province,
-                'password' => Hash::make($request->password),
-            ]);
+            ];
+
+            // Only hash and add password if provided
+            if ($request->filled('password')) {
+                $clientData['password'] = Hash::make($request->password);
+            }
+
+            $client = Client::create($clientData);
 
             return response()->json([
                 'success' => true,
@@ -207,7 +213,7 @@ class ClientController extends Controller
                 'barangay' => 'sometimes|string|max:255',
                 'municipality' => 'sometimes|string|max:255',
                 'province' => 'sometimes|string|max:255',
-                'password' => 'sometimes|string|min:8|confirmed',
+                'password' => 'nullable|string|min:8|confirmed',
             ]);
 
             if ($validator->fails()) {
@@ -220,7 +226,8 @@ class ClientController extends Controller
 
             $updateData = $request->except(['password', 'password_confirmation']);
             
-            if ($request->has('password')) {
+            // Only hash and add password if provided
+            if ($request->filled('password')) {
                 $updateData['password'] = Hash::make($request->password);
             }
 

@@ -150,7 +150,7 @@ class RequestController extends Controller
                 'contact_number' => 'nullable|string|max:20',
                 'requested_date' => 'required|date',
                 'created_by_user_type' => 'nullable|string|in:admin,staff',
-                'created_by_user_id' => 'nullable|string', // Staff ID or Admin ID
+                'created_by_user_id' => 'nullable|string|max:255', // Staff ID or Admin ID as varchar
             ]);
 
             if ($validator->fails()) {

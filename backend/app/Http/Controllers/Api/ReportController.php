@@ -32,27 +32,22 @@ class ReportController extends Controller
             $distributions = $query->orderBy('requested_date', 'desc')->get();
 
             $data = $distributions->map(function ($req) {
-                // Get client info
-                $clientName = '';
+                // Get client info from loaded relationship
+                $clientName = 'N/A';
                 $organization = 'N/A';
                 $contactNumber = 'N/A';
                 
-                if ($req->client_id) {
-                    $client = Client::find($req->client_id);
-                    if ($client) {
-                        // Combine first_name, middle_name, last_name
-                        $nameParts = array_filter([
-                            $client->first_name ?? '',
-                            $client->middle_name ?? '',
-                            $client->last_name ?? ''
-                        ]);
-                        $clientName = implode(' ', $nameParts) ?: 'N/A';
-                        
-                        $organization = $client->organization ?? 'N/A';
-                        $contactNumber = $client->contact_number ?? 'N/A';
-                    }
-                } else {
-                    $clientName = 'N/A';
+                if ($req->client) {
+                    // Combine first_name, middle_name, last_name
+                    $nameParts = array_filter([
+                        $req->client->first_name ?? '',
+                        $req->client->middle_name ?? '',
+                        $req->client->last_name ?? ''
+                    ]);
+                    $clientName = implode(' ', $nameParts) ?: 'N/A';
+                    
+                    $organization = $req->client->organization ?? 'N/A';
+                    $contactNumber = $req->client->contact_number ?? 'N/A';
                 }
                 
                 // Format date properly
