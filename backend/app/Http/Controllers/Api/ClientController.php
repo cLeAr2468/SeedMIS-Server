@@ -177,13 +177,32 @@ class ClientController extends Controller
         try {
             $client = Client::findOrFail($id);
 
+            // Check if email exists in other tables (excluding current client record)
+            if ($request->has('email') && $request->email !== $client->email) {
+                $emailExistsInStaff = Staff::where('email', $request->email)->exists();
+                $emailExistsInClient = Client::where('email', $request->email)
+                    ->where('id', '!=', $id)
+                    ->exists();
+                $emailExistsInAdmin = Admin::where('email', $request->email)->exists();
+
+                if ($emailExistsInStaff || $emailExistsInClient || $emailExistsInAdmin) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Validation failed',
+                        'errors' => [
+                            'email' => ['This email is already registered in the system.']
+                        ]
+                    ], 422);
+                }
+            }
+
             $validator = Validator::make($request->all(), [
                 'client_id' => 'sometimes|string|unique:clients,client_id,' . $id . '|max:255',
                 'organization' => 'sometimes|string|max:255',
                 'first_name' => 'sometimes|string|max:255',
                 'middle_name' => 'nullable|string|max:255',
                 'last_name' => 'sometimes|string|max:255',
-                'email' => 'sometimes|email|unique:clients,email,' . $id . '|max:255',
+                'email' => 'sometimes|email|max:255',
                 'contact_number' => 'sometimes|string|max:20',
                 'barangay' => 'sometimes|string|max:255',
                 'municipality' => 'sometimes|string|max:255',
