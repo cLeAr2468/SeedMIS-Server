@@ -17,6 +17,7 @@ class Customer extends Model
         'barangay',
         'municipality',
         'province',
+        'status',
         'upgraded_to_client_id',
         'is_active',
         'upgraded_at',

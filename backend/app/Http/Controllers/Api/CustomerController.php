@@ -115,6 +115,7 @@ class CustomerController extends Controller
                 'barangay' => 'required|string|max:255',
                 'municipality' => 'required|string|max:255',
                 'province' => 'required|string|max:255',
+                'status' => 'nullable|in:Active,Inactive',
             ]);
 
             if ($validator->fails()) {
@@ -136,6 +137,7 @@ class CustomerController extends Controller
                 'barangay' => $request->barangay,
                 'municipality' => $request->municipality,
                 'province' => $request->province,
+                'status' => $request->status ?? 'Active',
             ]);
 
             return response()->json([
@@ -233,6 +235,7 @@ class CustomerController extends Controller
                 'barangay' => 'sometimes|string|max:255',
                 'municipality' => 'sometimes|string|max:255',
                 'province' => 'sometimes|string|max:255',
+                'status' => 'sometimes|in:Active,Inactive',
             ]);
 
             if ($validator->fails()) {
@@ -254,6 +257,7 @@ class CustomerController extends Controller
                 'barangay',
                 'municipality',
                 'province',
+                'status',
             ]));
 
             return response()->json([
