@@ -298,6 +298,12 @@ class ProductionController extends Controller
             if ($inventory) {
                 // Update existing inventory - add to total quantity only
                 $inventory->total_quantity += $production->current_quantity;
+                
+                // Auto-update status to Available if quantity is now greater than 0
+                if ($inventory->total_quantity > 0) {
+                    $inventory->status = 'Available';
+                }
+                
                 $inventory->save();
                 
                 // Refresh to get updated data

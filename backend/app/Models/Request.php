@@ -11,6 +11,8 @@ class Request extends Model
 
     protected $fillable = [
         'client_id',
+        'customer_id',
+        'requester_type',
         'seedling_type',
         'quantity',
         'purpose',
@@ -39,14 +41,29 @@ class Request extends Model
     }
 
     /**
+     * Get the customer that owns the request.
+     */
+    public function customer()
+    {
+        return $this->belongsTo(Customer::class, 'customer_id');
+    }
+
+    /**
      * Get the requester's full name.
      */
     public function getRequesterNameAttribute()
     {
-        if ($this->client) {
-            return trim($this->client->first_name . ' ' . 
-                       ($this->client->middle_name ? $this->client->middle_name . ' ' : '') . 
-                       $this->client->last_name);
+        $requester = $this->requester_type === 'client' ? $this->client : $this->customer;
+        
+        if ($requester) {
+            $middleName = $requester->middle_name;
+            
+            // Skip middle name if it's "NA" or similar
+            if ($middleName && !in_array(strtoupper(trim($middleName)), ['NA', 'N/A', 'NONE', 'N.A.', 'N.A'])) {
+                return trim($requester->first_name . ' ' . $middleName . ' ' . $requester->last_name);
+            }
+            
+            return trim($requester->first_name . ' ' . $requester->last_name);
         }
         return null;
     }
@@ -56,6 +73,7 @@ class Request extends Model
      */
     public function getOrganizationAttribute()
     {
-        return $this->client ? $this->client->organization : null;
+        $requester = $this->requester_type === 'client' ? $this->client : $this->customer;
+        return $requester ? $requester->organization : null;
     }
 }

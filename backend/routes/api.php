@@ -3,6 +3,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\ClientController;
+use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\StaffController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ProductionController;
@@ -41,6 +42,11 @@ Route::middleware('api')->group(function () {
     // Client routes
     Route::get('clients/next-client-id', [ClientController::class, 'getNextClientId']);
     Route::apiResource('clients', ClientController::class);
+    
+    // Customer routes
+    Route::get('customers/next-customer-id', [CustomerController::class, 'getNextCustomerId']);
+    Route::post('customers/{id}/upgrade-to-client', [CustomerController::class, 'upgradeToClient']);
+    Route::apiResource('customers', CustomerController::class);
     
     // Staff routes
     Route::get('staff/next-staff-id', [StaffController::class, 'getNextStaffId']);

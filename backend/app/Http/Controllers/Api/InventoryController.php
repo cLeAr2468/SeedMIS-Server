@@ -189,6 +189,18 @@ class InventoryController extends Controller
             }
 
             $inventory->update($data);
+            
+            // Auto-update status based on quantity
+            $freshInventory = $inventory->fresh();
+            if ($request->has('total_quantity')) {
+                if ($freshInventory->total_quantity == 0) {
+                    $freshInventory->status = 'Not Available';
+                    $freshInventory->save();
+                } elseif ($freshInventory->total_quantity > 0 && $freshInventory->status === 'Not Available') {
+                    $freshInventory->status = 'Available';
+                    $freshInventory->save();
+                }
+            }
 
             // Log activity if user info is provided
             $userId = $request->input('user_id');
@@ -244,12 +256,13 @@ class InventoryController extends Controller
 
     /**
      * Check if inventory is low and send email notification to all admins
+     * Low stock threshold is 50 units
      */
     private function checkLowStockAndNotify($inventory)
     {
         try {
-            // Check if total_quantity is at or below min_stock_level
-            if ($inventory->total_quantity <= $inventory->min_stock_level && $inventory->min_stock_level > 0) {
+            // Check if total_quantity is at or below 50 units
+            if ($inventory->total_quantity <= 50) {
                 // Get all admin emails
                 $admins = \App\Models\Admin::all();
                 

@@ -2,10 +2,9 @@
 
 namespace App\Mail;
 
+use App\Models\Inventory;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
-use Illuminate\Mail\Mailables\Content;
-use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
 class LowStockAlert extends Mailable
@@ -13,42 +12,30 @@ class LowStockAlert extends Mailable
     use Queueable, SerializesModels;
 
     public $inventory;
+    public $threshold;
 
     /**
      * Create a new message instance.
      */
-    public function __construct($inventory)
+    public function __construct(Inventory $inventory, $threshold = 50)
     {
         $this->inventory = $inventory;
+        $this->threshold = $threshold;
     }
 
     /**
-     * Get the message envelope.
+     * Build the message.
      */
-    public function envelope(): Envelope
+    public function build()
     {
-        return new Envelope(
-            subject: '⚠️ Low Stock Alert - ' . $this->inventory->seedling_type,
-        );
-    }
-
-    /**
-     * Get the message content definition.
-     */
-    public function content(): Content
-    {
-        return new Content(
-            view: 'emails.low-stock-alert',
-        );
-    }
-
-    /**
-     * Get the attachments for the message.
-     *
-     * @return array<int, \Illuminate\Mail\Mailables\Attachment>
-     */
-    public function attachments(): array
-    {
-        return [];
+        return $this->subject('Low Stock Alert: ' . $this->inventory->seedling_type)
+                    ->view('emails.low-stock-alert')
+                    ->with([
+                        'seedlingType' => $this->inventory->seedling_type,
+                        'classification' => $this->inventory->classification,
+                        'currentQuantity' => $this->inventory->total_quantity,
+                        'threshold' => $this->threshold,
+                        'location' => $this->inventory->location ?? 'Not specified',
+                    ]);
     }
 }

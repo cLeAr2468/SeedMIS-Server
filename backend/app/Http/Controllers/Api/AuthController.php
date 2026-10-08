@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Admin;
 use App\Models\Staff;
+use App\Models\Client;
 use App\Mail\PasswordResetOTP;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -389,7 +390,7 @@ class AuthController extends Controller
 
                 $validator = Validator::make($request->all(), [
                     'name' => 'sometimes|string|max:255',
-                    'email' => 'sometimes|email|unique:admins,email,' . $userId,
+                    'email' => 'sometimes|email',
                 ]);
 
                 if ($validator->fails()) {
@@ -398,6 +399,31 @@ class AuthController extends Controller
                         'message' => 'Validation failed',
                         'errors' => $validator->errors()
                     ], 422);
+                }
+
+                // Check email uniqueness across all user types (excluding current user)
+                if ($request->has('email') && $request->email !== $user->email) {
+                    // Check in admins table
+                    if (Admin::where('email', $request->email)->where('id', '!=', $userId)->exists()) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'This email is already registered in the system'
+                        ], 422);
+                    }
+                    // Check in staff table
+                    if (Staff::where('email', $request->email)->exists()) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'This email is already registered in the system'
+                        ], 422);
+                    }
+                    // Check in clients table
+                    if (Client::where('email', $request->email)->exists()) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'This email is already registered in the system'
+                        ], 422);
+                    }
                 }
 
                 $user->update($request->only(['name', 'email']));
@@ -443,7 +469,7 @@ class AuthController extends Controller
                     'first_name' => 'sometimes|string|max:255',
                     'middle_name' => 'nullable|string|max:255',
                     'last_name' => 'sometimes|string|max:255',
-                    'email' => 'sometimes|email|unique:staff,email,' . $user->id,
+                    'email' => 'sometimes|email',
                     'position' => 'sometimes|string|max:255',
                     'contact_number' => 'sometimes|string|max:20',
                     'barangay' => 'sometimes|string|max:255',
@@ -457,6 +483,31 @@ class AuthController extends Controller
                         'message' => 'Validation failed',
                         'errors' => $validator->errors()
                     ], 422);
+                }
+
+                // Check email uniqueness across all user types (excluding current user)
+                if ($request->has('email') && $request->email !== $user->email) {
+                    // Check in admins table
+                    if (Admin::where('email', $request->email)->exists()) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'This email is already registered in the system'
+                        ], 422);
+                    }
+                    // Check in staff table
+                    if (Staff::where('email', $request->email)->where('id', '!=', $user->id)->exists()) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'This email is already registered in the system'
+                        ], 422);
+                    }
+                    // Check in clients table
+                    if (Client::where('email', $request->email)->exists()) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'This email is already registered in the system'
+                        ], 422);
+                    }
                 }
 
                 $user->update($request->only([

@@ -40,7 +40,7 @@ class RequestController extends Controller
     }
 
     /**
-     * Search users (clients) by name, email, or organization.
+     * Search users (both clients and customers) by name, email, or organization.
      */
     public function searchUsers(HttpRequest $request)
     {
@@ -54,7 +54,8 @@ class RequestController extends Controller
                 ]);
             }
 
-            $users = Client::where(function($q) use ($query) {
+            // Search clients
+            $clients = Client::where(function($q) use ($query) {
                 $q->where('first_name', 'LIKE', "%{$query}%")
                   ->orWhere('middle_name', 'LIKE', "%{$query}%")
                   ->orWhere('last_name', 'LIKE', "%{$query}%")
@@ -64,7 +65,7 @@ class RequestController extends Controller
             })
             ->select([
                 'id',
-                'client_id',
+                'client_id as user_id', // Alias for consistency
                 'first_name',
                 'middle_name',
                 'last_name',
@@ -75,8 +76,63 @@ class RequestController extends Controller
                 'municipality',
                 'province'
             ])
-            ->limit(10)
-            ->get();
+            ->limit(5)
+            ->get()
+            ->map(function($user) {
+                $user->user_type = 'client';
+                
+                // Format middle name - remove if "NA"
+                $middleName = $user->middle_name;
+                $naVariations = ['NA', 'N/A', 'NONE', 'N.A.', 'N.A'];
+                
+                if ($middleName && in_array(strtoupper(trim($middleName)), $naVariations)) {
+                    $user->middle_name = null;
+                }
+                
+                return $user;
+            });
+
+            // Search customers (only active ones)
+            $customers = \App\Models\Customer::where('is_active', true)
+                ->where(function($q) use ($query) {
+                    $q->where('first_name', 'LIKE', "%{$query}%")
+                      ->orWhere('middle_name', 'LIKE', "%{$query}%")
+                      ->orWhere('last_name', 'LIKE', "%{$query}%")
+                      ->orWhere('email', 'LIKE', "%{$query}%")
+                      ->orWhere('organization', 'LIKE', "%{$query}%")
+                      ->orWhere('customer_id', 'LIKE', "%{$query}%");
+                })
+                ->select([
+                    'id',
+                    'customer_id as user_id', // Alias for consistency
+                    'first_name',
+                    'middle_name',
+                    'last_name',
+                    'email',
+                    'organization',
+                    'contact_number',
+                    'barangay',
+                    'municipality',
+                    'province'
+                ])
+                ->limit(5)
+                ->get()
+                ->map(function($user) {
+                    $user->user_type = 'customer';
+                    
+                    // Format middle name - remove if "NA"
+                    $middleName = $user->middle_name;
+                    $naVariations = ['NA', 'N/A', 'NONE', 'N.A.', 'N.A'];
+                    
+                    if ($middleName && in_array(strtoupper(trim($middleName)), $naVariations)) {
+                        $user->middle_name = null;
+                    }
+                    
+                    return $user;
+                });
+
+            // Merge and sort results
+            $users = $clients->merge($customers)->take(10);
 
             return response()->json([
                 'success' => true,
@@ -97,15 +153,19 @@ class RequestController extends Controller
     public function index()
     {
         try {
-            $requests = Request::with('client:id,first_name,middle_name,last_name,email,organization')
+            $requests = Request::with(['client:id,first_name,middle_name,last_name,email,organization', 'customer:id,first_name,middle_name,last_name,email,organization'])
                 ->orderBy('created_at', 'desc')
                 ->get()
                 ->map(function($request) {
+                    $requester = $request->requester_type === 'client' ? $request->client : $request->customer;
+                    
                     return [
                         'id' => $request->id,
+                        'requester_type' => $request->requester_type,
                         'client_id' => $request->client_id,
+                        'customer_id' => $request->customer_id,
                         'requester' => $request->requester_name,
-                        'organization' => $request->client->organization ?? null,
+                        'organization' => $requester->organization ?? null,
                         'seedling_type' => $request->seedling_type,
                         'seedlingType' => $request->seedling_type, // Alias for frontend
                         'quantity' => $request->quantity,
@@ -143,14 +203,15 @@ class RequestController extends Controller
     {
         try {
             $validator = Validator::make($request->all(), [
-                'client_id' => 'required|exists:clients,id',
+                'requester_type' => 'required|string|in:client,customer',
+                'requester_id' => 'required|integer',
                 'seedling_type' => 'required|string|max:255',
                 'quantity' => 'required|integer|min:1',
                 'purpose' => 'required|string',
                 'contact_number' => 'nullable|string|max:20',
                 'requested_date' => 'required|date',
                 'created_by_user_type' => 'nullable|string|in:admin,staff',
-                'created_by_user_id' => 'nullable|string|max:255', // Staff ID or Admin ID as varchar
+                'created_by_user_id' => 'nullable|string|max:255',
             ]);
 
             if ($validator->fails()) {
@@ -175,6 +236,48 @@ class RequestController extends Controller
                 }
             }
 
+            // Get requester based on type
+            $requesterType = $request->input('requester_type');
+            $requesterId = $request->input('requester_id');
+            
+            if ($requesterType === 'client') {
+                $requester = \App\Models\Client::find($requesterId);
+                if (!$requester) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Client not found'
+                    ], 404);
+                }
+            } else {
+                $requester = \App\Models\Customer::find($requesterId);
+                if (!$requester) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Customer not found'
+                    ], 404);
+                }
+            }
+
+            // Check for existing pending/approved requests for same seedling type
+            $existingRequestQuery = \App\Models\Request::where('requester_type', $requesterType)
+                ->where('seedling_type', $request->seedling_type)
+                ->whereIn('status', ['Pending', 'Approved']);
+            
+            if ($requesterType === 'client') {
+                $existingRequestQuery->where('client_id', $requesterId);
+            } else {
+                $existingRequestQuery->where('customer_id', $requesterId);
+            }
+            
+            $existingRequest = $existingRequestQuery->first();
+
+            if ($existingRequest) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "This user already has a {$existingRequest->status} request for {$request->seedling_type}. Please wait until it is Released or Rejected before requesting again."
+                ], 422);
+            }
+
             // Get inventory item to check availability and get price
             $inventory = \App\Models\Inventory::where('seedling_type', $request->seedling_type)
                 ->where('status', 'Available')
@@ -196,12 +299,9 @@ class RequestController extends Controller
                     'message' => "Insufficient stock. Only {$inventory->total_quantity} available."
                 ], 422);
             }
-
-            // Get client to check if LGU
-            $client = \App\Models\Client::find($request->client_id);
             
             // Check if organization contains "LGU" (case insensitive)
-            $isLGU = stripos($client->organization, 'LGU') !== false;
+            $isLGU = stripos($requester->organization, 'LGU') !== false;
 
             // Calculate total price (0 if LGU, otherwise normal calculation)
             $pricePerUnit = $isLGU ? 0 : $inventory->price_per_unit;
@@ -210,17 +310,25 @@ class RequestController extends Controller
             // Deduct from inventory (reserve the quantity)
             $inventory->total_quantity -= $quantity;
             $inventory->reserved_quantity += $quantity;
+            
+            // Check if inventory is now zero and update status
+            if ($inventory->total_quantity == 0) {
+                $inventory->status = 'Not Available';
+            }
+            
             $inventory->save();
+            
+            // Check low stock and send notification to admins
+            $this->checkLowStockAndNotify($inventory);
 
             // Determine initial status: if created by admin/staff, auto-approve
-            $createdByUserType = $request->input('created_by_user_type');
             $initialStatus = ($createdByUserType === 'admin' || $createdByUserType === 'staff') 
                 ? 'Approved' 
                 : 'Pending';
 
-            // Create the request
-            $requestData = Request::create([
-                'client_id' => $request->client_id,
+            // Create the request with appropriate IDs
+            $requestData = [
+                'requester_type' => $requesterType,
                 'seedling_type' => $request->seedling_type,
                 'quantity' => $quantity,
                 'purpose' => $request->purpose,
@@ -229,10 +337,25 @@ class RequestController extends Controller
                 'price_per_unit' => $pricePerUnit,
                 'total_price' => $totalPrice,
                 'status' => $initialStatus,
-            ]);
+            ];
 
-            // Load the client relationship
-            $requestData->load('client:id,first_name,middle_name,last_name,email,organization');
+            // Set appropriate ID based on requester type
+            if ($requesterType === 'client') {
+                $requestData['client_id'] = $requesterId;
+                $requestData['customer_id'] = null;
+            } else {
+                $requestData['customer_id'] = $requesterId;
+                $requestData['client_id'] = null;
+            }
+
+            $newRequest = Request::create($requestData);
+
+            // Load the appropriate relationship
+            if ($requesterType === 'client') {
+                $newRequest->load('client:id,first_name,middle_name,last_name,email,organization');
+            } else {
+                $newRequest->load('customer:id,first_name,middle_name,last_name,email,organization');
+            }
 
             $message = $initialStatus === 'Approved' 
                 ? 'Request created and automatically approved. Quantity reserved from inventory.'
@@ -242,19 +365,19 @@ class RequestController extends Controller
                 'success' => true,
                 'message' => $message,
                 'data' => [
-                    'id' => $requestData->id,
-                    'client_id' => $requestData->client_id,
-                    'requester' => $requestData->requester_name,
-                    'organization' => $requestData->client->organization ?? null,
-                    'seedling_type' => $requestData->seedling_type,
-                    'quantity' => $requestData->quantity,
-                    'purpose' => $requestData->purpose,
-                    'contact_number' => $requestData->contact_number,
-                    'requested_date' => $requestData->requested_date->format('Y-m-d'),
-                    'price_per_unit' => $requestData->price_per_unit,
-                    'total_price' => $requestData->total_price,
-                    'status' => $requestData->status,
-                    'created_at' => $requestData->created_at->format('Y-m-d H:i:s'),
+                    'id' => $newRequest->id,
+                    'requester_type' => $newRequest->requester_type,
+                    'requester' => $newRequest->requester_name,
+                    'organization' => $requester->organization ?? null,
+                    'seedling_type' => $newRequest->seedling_type,
+                    'quantity' => $newRequest->quantity,
+                    'purpose' => $newRequest->purpose,
+                    'contact_number' => $newRequest->contact_number,
+                    'requested_date' => $newRequest->requested_date->format('Y-m-d'),
+                    'price_per_unit' => $newRequest->price_per_unit,
+                    'total_price' => $newRequest->total_price,
+                    'status' => $newRequest->status,
+                    'created_at' => $newRequest->created_at->format('Y-m-d H:i:s'),
                 ]
             ], 201);
         } catch (\Exception $e) {
@@ -362,6 +485,12 @@ class RequestController extends Controller
                     // Return reserved quantity back to total quantity
                     $inventory->total_quantity += $request->quantity;
                     $inventory->reserved_quantity -= $request->quantity;
+                    
+                    // Update status to Available if quantity is now greater than 0
+                    if ($inventory->total_quantity > 0) {
+                        $inventory->status = 'Available';
+                    }
+                    
                     $inventory->save();
                 }
 
@@ -386,7 +515,16 @@ class RequestController extends Controller
                 if ($inventory) {
                     // Deduct from reserved quantity (already removed from total when request was created)
                     $inventory->reserved_quantity -= $request->quantity;
+                    
+                    // Check if inventory is now zero and update status
+                    if ($inventory->total_quantity == 0) {
+                        $inventory->status = 'Not Available';
+                    }
+                    
                     $inventory->save();
+                    
+                    // Check low stock and send notification to admins
+                    $this->checkLowStockAndNotify($inventory);
                 }
 
                 // Send release email
@@ -610,6 +748,34 @@ class RequestController extends Controller
         } catch (\Exception $e) {
             // Log error but don't fail the request update
             \Log::error("Failed to send email for request #{$request->id}: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Check if inventory is low and send email notification to all admins
+     * Low stock threshold is 50 units
+     */
+    private function checkLowStockAndNotify($inventory)
+    {
+        try {
+            // Check if total_quantity is at or below 50 units
+            if ($inventory->total_quantity <= 50) {
+                // Get all admin emails
+                $admins = \App\Models\Admin::all();
+                
+                if ($admins->count() > 0) {
+                    foreach ($admins as $admin) {
+                        if ($admin->email) {
+                            Mail::to($admin->email)->send(new \App\Mail\LowStockAlert($inventory));
+                        }
+                    }
+                    
+                    \Log::info('Low stock alert sent for: ' . $inventory->seedling_type);
+                }
+            }
+        } catch (\Exception $e) {
+            // Log error but don't fail the main operation
+            \Log::error('Failed to send low stock email: ' . $e->getMessage());
         }
     }
 }

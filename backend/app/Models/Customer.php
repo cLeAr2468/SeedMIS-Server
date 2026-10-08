@@ -3,38 +3,42 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 
-class Client extends Model
+class Customer extends Model
 {
-    use HasFactory;
-
     protected $fillable = [
-        'client_id',
-        'organization',
+        'customer_id',
         'first_name',
         'middle_name',
         'last_name',
         'email',
         'contact_number',
+        'organization',
         'barangay',
         'municipality',
         'province',
-        'password',
-        'status',
+        'upgraded_to_client_id',
+        'is_active',
+        'upgraded_at',
     ];
 
-    protected $hidden = [
-        'password',
-    ];
-
+    protected $hidden = [];
+    
     protected $casts = [
-        'created_at' => 'datetime',
-        'updated_at' => 'datetime',
+        'is_active' => 'boolean',
+        'upgraded_at' => 'datetime',
     ];
+    
+    /**
+     * Relationship to Client if upgraded
+     */
+    public function client()
+    {
+        return $this->belongsTo(\App\Models\Client::class, 'upgraded_to_client_id');
+    }
 
     /**
-     * Get the client's full name (excluding "NA" middle names).
+     * Get the customer's full name (excluding "NA" middle names).
      */
     public function getFullNameAttribute()
     {

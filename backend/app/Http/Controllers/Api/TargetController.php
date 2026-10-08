@@ -51,7 +51,11 @@ class TargetController extends Controller
                 ->forPeriod($currentYear)
                 ->first();
 
-            $totalProduced = Production::whereYear('created_at', $currentYear)->sum('quantity');
+            // Get total produced from production_history (created and transferred actions)
+            $totalProduced = DB::table('production_history')
+                ->whereIn('action_type', ['created', 'transferred'])
+                ->whereYear('changed_at', $currentYear)
+                ->sum('new_quantity');
 
             // Monthly Distribution Target
             $monthlyTarget = Target::active()
@@ -80,9 +84,12 @@ class TargetController extends Controller
                 ->forPeriod($currentYear)
                 ->get()
                 ->map(function($target) use ($currentYear) {
-                    $produced = Production::where('seedling_type', $target->seedling_type)
-                        ->whereYear('created_at', $currentYear)
-                        ->sum('quantity');
+                    // Get produced from production_history (created and transferred actions)
+                    $produced = DB::table('production_history')
+                        ->where('seedling_type', $target->seedling_type)
+                        ->whereIn('action_type', ['created', 'transferred'])
+                        ->whereYear('changed_at', $currentYear)
+                        ->sum('new_quantity');
 
                     $percentage = $target->target_value > 0 
                         ? ($produced / $target->target_value) * 100 
