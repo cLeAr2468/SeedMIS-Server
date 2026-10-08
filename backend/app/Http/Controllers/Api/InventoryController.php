@@ -41,7 +41,14 @@ class InventoryController extends Controller
             $totalStock = Inventory::sum('total_quantity');
             $totalValue = Inventory::selectRaw('SUM(total_quantity * price_per_unit) as total')->first()->total ?? 0;
             $totalTypes = Inventory::count();
-            $lowStock = Inventory::whereRaw('total_quantity <= min_stock_level')->count();
+            
+            // Low stock: items with quantity > 0 and <= 50
+            $lowStock = Inventory::where('total_quantity', '>', 0)
+                                 ->where('total_quantity', '<=', 50)
+                                 ->count();
+            
+            // Out of stock: items with quantity = 0
+            $outOfStock = Inventory::where('total_quantity', '=', 0)->count();
             
             return response()->json([
                 'success' => true,
@@ -50,6 +57,7 @@ class InventoryController extends Controller
                     'total_value' => round($totalValue, 2),
                     'total_types' => $totalTypes,
                     'low_stock' => $lowStock,
+                    'out_of_stock' => $outOfStock,
                 ],
                 'message' => 'Inventory metrics retrieved successfully'
             ], 200);

@@ -93,7 +93,21 @@ class StaffController extends Controller
                 'last_name' => 'required|string|max:255',
                 'email' => 'required|email|max:255',
                 'position' => 'required|string|max:255',
-                'contact_number' => 'required|string|max:20',
+                'contact_number' => [
+                    'required',
+                    'string',
+                    'max:20',
+                    function ($attribute, $value, $fail) {
+                        // Check if contact number exists in staff, clients, or customers
+                        $existsInStaff = Staff::where('contact_number', $value)->exists();
+                        $existsInClient = Client::where('contact_number', $value)->exists();
+                        $existsInCustomer = \App\Models\Customer::where('contact_number', $value)->exists();
+                        
+                        if ($existsInStaff || $existsInClient || $existsInCustomer) {
+                            $fail('This contact number is already registered in the system.');
+                        }
+                    }
+                ],
                 'barangay' => 'required|string|max:255',
                 'municipality' => 'required|string|max:255',
                 'province' => 'required|string|max:255',
@@ -203,7 +217,21 @@ class StaffController extends Controller
                 'last_name' => 'sometimes|string|max:255',
                 'email' => 'sometimes|email|max:255',
                 'position' => 'sometimes|string|max:255',
-                'contact_number' => 'sometimes|string|max:20',
+                'contact_number' => [
+                    'sometimes',
+                    'string',
+                    'max:20',
+                    function ($attribute, $value, $fail) use ($id) {
+                        // Check if contact number exists in other records
+                        $existsInStaff = Staff::where('contact_number', $value)->where('id', '!=', $id)->exists();
+                        $existsInClient = Client::where('contact_number', $value)->exists();
+                        $existsInCustomer = \App\Models\Customer::where('contact_number', $value)->exists();
+                        
+                        if ($existsInStaff || $existsInClient || $existsInCustomer) {
+                            $fail('This contact number is already registered in the system.');
+                        }
+                    }
+                ],
                 'barangay' => 'sometimes|string|max:255',
                 'municipality' => 'sometimes|string|max:255',
                 'province' => 'sometimes|string|max:255',

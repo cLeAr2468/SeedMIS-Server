@@ -54,8 +54,9 @@ class RequestController extends Controller
                 ]);
             }
 
-            // Search clients
-            $clients = Client::where(function($q) use ($query) {
+            // Search clients (only active ones)
+            $clients = Client::where('status', 'Active')
+                ->where(function($q) use ($query) {
                 $q->where('first_name', 'LIKE', "%{$query}%")
                   ->orWhere('middle_name', 'LIKE', "%{$query}%")
                   ->orWhere('last_name', 'LIKE', "%{$query}%")
@@ -92,8 +93,9 @@ class RequestController extends Controller
                 return $user;
             });
 
-            // Search customers (only active ones)
-            $customers = \App\Models\Customer::where('is_active', true)
+            // Search customers (only active ones and not upgraded to client)
+            $customers = \App\Models\Customer::where('status', 'Active')
+                ->whereNull('upgraded_to_client_id')
                 ->where(function($q) use ($query) {
                     $q->where('first_name', 'LIKE', "%{$query}%")
                       ->orWhere('middle_name', 'LIKE', "%{$query}%")
@@ -248,6 +250,13 @@ class RequestController extends Controller
                         'message' => 'Client not found'
                     ], 404);
                 }
+                // Check if client account is Inactive
+                if ($requester->status === 'Inactive') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Your account is inactive. You cannot process transactions. Please contact administrator.'
+                    ], 403);
+                }
             } else {
                 $requester = \App\Models\Customer::find($requesterId);
                 if (!$requester) {
@@ -255,6 +264,13 @@ class RequestController extends Controller
                         'success' => false,
                         'message' => 'Customer not found'
                     ], 404);
+                }
+                // Check if customer account is Inactive
+                if ($requester->status === 'Inactive') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Your account is inactive. You cannot process transactions. Please contact administrator.'
+                    ], 403);
                 }
             }
 
