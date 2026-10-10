@@ -93,9 +93,8 @@ class RequestController extends Controller
                 return $user;
             });
 
-            // Search customers (only active ones and not upgraded to client)
+            // Search customers (only active ones)
             $customers = \App\Models\Customer::where('status', 'Active')
-                ->whereNull('upgraded_to_client_id')
                 ->where(function($q) use ($query) {
                     $q->where('first_name', 'LIKE', "%{$query}%")
                       ->orWhere('middle_name', 'LIKE', "%{$query}%")
@@ -411,15 +410,20 @@ class RequestController extends Controller
     public function show($id)
     {
         try {
-            $request = Request::with('client')->findOrFail($id);
+            $request = Request::with(['client', 'customer'])->findOrFail($id);
+
+            // Get the requester data based on type
+            $requester = $request->requester_type === 'client' ? $request->client : $request->customer;
 
             return response()->json([
                 'success' => true,
                 'data' => [
                     'id' => $request->id,
+                    'requester_type' => $request->requester_type,
                     'client_id' => $request->client_id,
+                    'customer_id' => $request->customer_id,
                     'requester' => $request->requester_name,
-                    'organization' => $request->client->organization ?? null,
+                    'organization' => $requester->organization ?? null,
                     'seedling_type' => $request->seedling_type,
                     'quantity' => $request->quantity,
                     'purpose' => $request->purpose,
@@ -428,7 +432,8 @@ class RequestController extends Controller
                     'price_per_unit' => $request->price_per_unit,
                     'total_price' => $request->total_price,
                     'status' => $request->status,
-                    'client' => $request->client,
+                    'client' => $request->requester_type === 'client' ? $request->client : null,
+                    'customer' => $request->requester_type === 'customer' ? $request->customer : null,
                     'created_at' => $request->created_at->format('Y-m-d H:i:s'),
                     'updated_at' => $request->updated_at->format('Y-m-d H:i:s'),
                 ]

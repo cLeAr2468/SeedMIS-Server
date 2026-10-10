@@ -204,8 +204,9 @@ class ClientController extends Controller
                     ->where('id', '!=', $id)
                     ->exists();
                 $emailExistsInAdmin = Admin::where('email', $request->email)->exists();
+                $emailExistsInCustomer = \App\Models\Customer::where('email', $request->email)->exists();
 
-                if ($emailExistsInStaff || $emailExistsInClient || $emailExistsInAdmin) {
+                if ($emailExistsInStaff || $emailExistsInClient || $emailExistsInAdmin || $emailExistsInCustomer) {
                     return response()->json([
                         'success' => false,
                         'message' => 'Validation failed',

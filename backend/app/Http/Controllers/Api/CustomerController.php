@@ -357,12 +357,16 @@ class CustomerController extends Controller
                     'requester_type' => 'client'
                 ]);
 
+            // Delete the customer record since data is now transferred to client
+            $customerEmail = $customer->email; // Save for email sending
+            $customer->delete();
+
             // Send email with temporary password
             try {
-                \Illuminate\Support\Facades\Mail::to($customer->email)
+                \Illuminate\Support\Facades\Mail::to($customerEmail)
                     ->send(new \App\Mail\AccountUpgraded($client, $tempPassword));
                 
-                \Illuminate\Support\Facades\Log::info('Account upgrade email sent to: ' . $customer->email);
+                \Illuminate\Support\Facades\Log::info('Account upgrade email sent to: ' . $customerEmail);
             } catch (\Exception $e) {
                 // Log error but don't fail the upgrade
                 \Illuminate\Support\Facades\Log::error('Failed to send upgrade email: ' . $e->getMessage());
@@ -375,7 +379,7 @@ class CustomerController extends Controller
                     'client' => $client,
                     'temporary_password' => $tempPassword,
                     'email_sent' => true,
-                    'note' => 'An email with login credentials has been sent to ' . $customer->email
+                    'note' => 'Customer data has been transferred and the customer record has been deleted. An email with login credentials has been sent to ' . $customerEmail
                 ]
             ], 200);
 
