@@ -13,6 +13,7 @@ class Request extends Model
         'client_id',
         'customer_id',
         'requester_type',
+        'inventory_id',
         'seedling_type',
         'quantity',
         'purpose',
@@ -21,6 +22,7 @@ class Request extends Model
         'price_per_unit',
         'total_price',
         'status',
+        'request_source',
     ];
 
     protected $casts = [
@@ -49,6 +51,28 @@ class Request extends Model
     }
 
     /**
+     * Get the inventory that owns the request.
+     */
+    public function inventory()
+    {
+        return $this->belongsTo(Inventory::class, 'inventory_id');
+    }
+
+    /**
+     * Get the seedling type from inventory or fallback to stored value
+     */
+    public function getSeedlingTypeAttribute($value)
+    {
+        // If inventory relationship exists, use its seedling_type
+        if ($this->inventory) {
+            return $this->inventory->seedling_type;
+        }
+        
+        // Otherwise use stored value (for backward compatibility)
+        return $value;
+    }
+
+    /**
      * Get the requester's full name.
      */
     public function getRequesterNameAttribute()
@@ -57,13 +81,14 @@ class Request extends Model
         
         if ($requester) {
             $middleName = $requester->middle_name;
+            $suffix = $requester->suffix ?? '';
             
             // Skip middle name if it's "NA" or similar
             if ($middleName && !in_array(strtoupper(trim($middleName)), ['NA', 'N/A', 'NONE', 'N.A.', 'N.A'])) {
-                return trim($requester->first_name . ' ' . $middleName . ' ' . $requester->last_name);
+                return trim($requester->first_name . ' ' . $middleName . ' ' . $requester->last_name . ($suffix ? ' ' . $suffix : ''));
             }
             
-            return trim($requester->first_name . ' ' . $requester->last_name);
+            return trim($requester->first_name . ' ' . $requester->last_name . ($suffix ? ' ' . $suffix : ''));
         }
         return null;
     }
@@ -75,5 +100,20 @@ class Request extends Model
     {
         $requester = $this->requester_type === 'client' ? $this->client : $this->customer;
         return $requester ? $requester->organization : null;
+    }
+
+    /**
+     * Get the seedling type from inventory or fallback to stored value.
+     * This accessor ensures we always get the latest seedling_type from inventory.
+     */
+    public function getSeedlingTypeDisplayAttribute()
+    {
+        // If inventory relationship exists, use its current seedling_type
+        if ($this->inventory) {
+            return $this->inventory->seedling_type;
+        }
+        
+        // Otherwise use stored value (for backward compatibility or if inventory deleted)
+        return $this->attributes['seedling_type'] ?? 'Unknown';
     }
 }

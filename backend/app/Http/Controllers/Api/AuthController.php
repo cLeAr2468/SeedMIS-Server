@@ -343,13 +343,16 @@ class AuthController extends Controller
                         'first_name' => $user->first_name,
                         'middle_name' => $user->middle_name,
                         'last_name' => $user->last_name,
-                        'name' => trim($user->first_name . ' ' . ($user->middle_name ? $user->middle_name . ' ' : '') . $user->last_name),
+                        'suffix' => $user->suffix,
+                        'name' => trim($user->first_name . ' ' . ($user->middle_name ? $user->middle_name . ' ' : '') . $user->last_name . ($user->suffix ? ' ' . $user->suffix : '')),
                         'email' => $user->email,
                         'position' => $user->position,
                         'contact_number' => $user->contact_number,
+                        'purok' => $user->purok,
                         'barangay' => $user->barangay,
                         'municipality' => $user->municipality,
                         'province' => $user->province,
+                        'region' => $user->region,
                         'status' => $user->status,
                         'created_at' => $user->created_at,
                         'user_type' => 'staff'
@@ -469,12 +472,15 @@ class AuthController extends Controller
                     'first_name' => 'sometimes|string|max:255',
                     'middle_name' => 'nullable|string|max:255',
                     'last_name' => 'sometimes|string|max:255',
+                    'suffix' => 'nullable|string|max:10',
                     'email' => 'sometimes|email',
                     'position' => 'sometimes|string|max:255',
                     'contact_number' => 'sometimes|string|max:20',
+                    'purok' => 'nullable|string|max:255',
                     'barangay' => 'sometimes|string|max:255',
                     'municipality' => 'sometimes|string|max:255',
                     'province' => 'sometimes|string|max:255',
+                    'region' => 'nullable|string|max:255',
                 ]);
 
                 if ($validator->fails()) {
@@ -511,16 +517,16 @@ class AuthController extends Controller
                 }
 
                 $user->update($request->only([
-                    'first_name', 'middle_name', 'last_name', 
+                    'first_name', 'middle_name', 'last_name', 'suffix',
                     'email', 'position', 'contact_number',
-                    'barangay', 'municipality', 'province'
+                    'purok', 'barangay', 'municipality', 'province', 'region'
                 ]));
 
                 // Log activity - use staff_id and pass only fields that were sent
                 $changedFields = $request->only([
-                    'first_name', 'middle_name', 'last_name', 
+                    'first_name', 'middle_name', 'last_name', 'suffix',
                     'email', 'position', 'contact_number',
-                    'barangay', 'municipality', 'province'
+                    'purok', 'barangay', 'municipality', 'province', 'region'
                 ]);
 
                 ActivityLogService::logProfile($user->staff_id, $userType, 'updated', $changedFields);
@@ -534,13 +540,17 @@ class AuthController extends Controller
                         'first_name' => $user->first_name,
                         'middle_name' => $user->middle_name,
                         'last_name' => $user->last_name,
-                        'name' => trim($user->first_name . ' ' . ($user->middle_name ? $user->middle_name . ' ' : '') . $user->last_name),
+                        'suffix' => $user->suffix,
+                        'name' => trim($user->first_name . ' ' . ($user->middle_name ? $user->middle_name . ' ' : '') . $user->last_name . ($user->suffix ? ' ' . $user->suffix : '')),
                         'email' => $user->email,
                         'position' => $user->position,
                         'contact_number' => $user->contact_number,
+                        'purok' => $user->purok,
                         'barangay' => $user->barangay,
                         'municipality' => $user->municipality,
                         'province' => $user->province,
+                        'region' => $user->region,
+                        'status' => $user->status,
                         'user_type' => 'staff'
                     ]
                 ], 200);

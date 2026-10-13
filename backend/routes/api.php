@@ -191,3 +191,18 @@ Route::get('/seed-admin', function () {
         ]);
     }
 });
+
+// Client Portal Routes
+Route::prefix('client')->group(function () {
+    // Public routes
+    Route::post('/register', [App\Http\Controllers\Api\Client\AuthController::class, 'register']);
+    Route::post('/login', [App\Http\Controllers\Api\Client\AuthController::class, 'login']);
+    Route::post('/forgot-password', [App\Http\Controllers\Api\Client\AuthController::class, 'forgotPassword']);
+    
+    // Protected routes
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::post('/logout', [App\Http\Controllers\Api\Client\AuthController::class, 'logout']);
+        Route::get('/me', [App\Http\Controllers\Api\Client\AuthController::class, 'me']);
+        Route::get('/requests', [App\Http\Controllers\Api\Client\RequestController::class, 'index']);
+    });
+});

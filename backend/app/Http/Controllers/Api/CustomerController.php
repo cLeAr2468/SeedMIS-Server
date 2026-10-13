@@ -112,9 +112,12 @@ class CustomerController extends Controller
                 'last_name' => 'required|string|max:255',
                 'email' => 'required|email|max:255',
                 'contact_number' => 'required|string|max:20',
+                'suffix' => 'nullable|string|max:10',
                 'barangay' => 'required|string|max:255',
                 'municipality' => 'required|string|max:255',
                 'province' => 'required|string|max:255',
+                'region' => 'required|string|max:255',
+                'purok' => 'nullable|string|max:255',
                 'status' => 'nullable|in:Active,Inactive',
             ]);
 
@@ -132,11 +135,14 @@ class CustomerController extends Controller
                 'first_name' => $request->first_name,
                 'middle_name' => $request->middle_name,
                 'last_name' => $request->last_name,
+                'suffix' => $request->suffix,
                 'email' => $request->email,
                 'contact_number' => $request->contact_number,
                 'barangay' => $request->barangay,
                 'municipality' => $request->municipality,
                 'province' => $request->province,
+                'region' => $request->region,
+                'purok' => $request->purok,
                 'status' => $request->status ?? 'Active',
             ]);
 
@@ -232,9 +238,12 @@ class CustomerController extends Controller
                 'last_name' => 'sometimes|string|max:255',
                 'email' => 'sometimes|email|max:255',
                 'contact_number' => 'sometimes|string|max:20',
+                'suffix' => 'nullable|string|max:10',
                 'barangay' => 'sometimes|string|max:255',
                 'municipality' => 'sometimes|string|max:255',
                 'province' => 'sometimes|string|max:255',
+                'region' => 'sometimes|string|max:255',
+                'purok' => 'nullable|string|max:255',
                 'status' => 'sometimes|in:Active,Inactive',
             ]);
 
@@ -252,11 +261,14 @@ class CustomerController extends Controller
                 'first_name',
                 'middle_name',
                 'last_name',
+                'suffix',
                 'email',
                 'contact_number',
                 'barangay',
                 'municipality',
                 'province',
+                'region',
+                'purok',
                 'status',
             ]));
 
@@ -332,12 +344,15 @@ class CustomerController extends Controller
                 'first_name' => $customer->first_name,
                 'middle_name' => $customer->middle_name,
                 'last_name' => $customer->last_name,
+                'suffix' => $customer->suffix,
                 'email' => $customer->email,
                 'contact_number' => $customer->contact_number,
                 'organization' => $customer->organization,
                 'barangay' => $customer->barangay,
                 'municipality' => $customer->municipality,
                 'province' => $customer->province,
+                'region' => $customer->region,
+                'purok' => $customer->purok,
                 'password' => \Hash::make($tempPassword),
             ]);
 

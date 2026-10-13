@@ -4,10 +4,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Laravel\Sanctum\HasApiTokens;
 
 class Client extends Model
 {
-    use HasFactory;
+    use HasFactory, HasApiTokens;
 
     protected $fillable = [
         'client_id',
@@ -15,11 +16,14 @@ class Client extends Model
         'first_name',
         'middle_name',
         'last_name',
+        'suffix',
         'email',
         'contact_number',
         'barangay',
         'municipality',
         'province',
+        'region',
+        'purok',
         'password',
         'status',
     ];
@@ -39,12 +43,22 @@ class Client extends Model
     public function getFullNameAttribute()
     {
         $middleName = $this->middle_name;
+        $suffix = $this->suffix;
         
-        // Skip middle name if it's "NA" or similar
+        $name = $this->first_name;
+        
+        // Add middle name if it's not "NA" or similar
         if ($middleName && !in_array(strtoupper(trim($middleName)), ['NA', 'N/A', 'NONE', 'N.A.', 'N.A'])) {
-            return trim($this->first_name . ' ' . $middleName . ' ' . $this->last_name);
+            $name .= ' ' . $middleName;
         }
         
-        return trim($this->first_name . ' ' . $this->last_name);
+        $name .= ' ' . $this->last_name;
+        
+        // Add suffix if present
+        if ($suffix) {
+            $name .= ' ' . $suffix;
+        }
+        
+        return trim($name);
     }
 }

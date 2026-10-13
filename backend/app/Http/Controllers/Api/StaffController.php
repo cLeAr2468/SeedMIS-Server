@@ -108,9 +108,12 @@ class StaffController extends Controller
                         }
                     }
                 ],
+                'suffix' => 'nullable|string|max:10',
                 'barangay' => 'required|string|max:255',
                 'municipality' => 'required|string|max:255',
                 'province' => 'required|string|max:255',
+                'region' => 'required|string|max:255',
+                'purok' => 'nullable|string|max:255',
                 'password' => [
                     'required',
                     'string',
@@ -137,12 +140,15 @@ class StaffController extends Controller
                 'first_name' => $request->first_name,
                 'middle_name' => $request->middle_name,
                 'last_name' => $request->last_name,
+                'suffix' => $request->suffix,
                 'email' => $request->email,
                 'position' => $request->position,
                 'contact_number' => $request->contact_number,
                 'barangay' => $request->barangay,
                 'municipality' => $request->municipality,
                 'province' => $request->province,
+                'region' => $request->region,
+                'purok' => $request->purok,
                 'password' => Hash::make($request->password),
             ]);
 
@@ -232,9 +238,12 @@ class StaffController extends Controller
                         }
                     }
                 ],
+                'suffix' => 'nullable|string|max:10',
                 'barangay' => 'sometimes|string|max:255',
                 'municipality' => 'sometimes|string|max:255',
                 'province' => 'sometimes|string|max:255',
+                'region' => 'sometimes|string|max:255',
+                'purok' => 'nullable|string|max:255',
                 'password' => 'sometimes|string|min:8|confirmed',
             ]);
 

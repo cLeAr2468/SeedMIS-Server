@@ -154,11 +154,20 @@ class RequestController extends Controller
     public function index()
     {
         try {
-            $requests = Request::with(['client:id,first_name,middle_name,last_name,email,organization', 'customer:id,first_name,middle_name,last_name,email,organization'])
+            $requests = Request::with([
+                'client:id,first_name,middle_name,last_name,suffix,email,organization',
+                'customer:id,first_name,middle_name,last_name,suffix,email,organization',
+                'inventory:id,seedling_type'
+            ])
                 ->orderBy('created_at', 'desc')
                 ->get()
                 ->map(function($request) {
                     $requester = $request->requester_type === 'client' ? $request->client : $request->customer;
+                    
+                    // Use inventory seedling_type if available, otherwise fallback to stored value
+                    $seedlingType = $request->inventory 
+                        ? $request->inventory->seedling_type 
+                        : $request->attributes['seedling_type'];
                     
                     return [
                         'id' => $request->id,
@@ -167,8 +176,8 @@ class RequestController extends Controller
                         'customer_id' => $request->customer_id,
                         'requester' => $request->requester_name,
                         'organization' => $requester->organization ?? null,
-                        'seedling_type' => $request->seedling_type,
-                        'seedlingType' => $request->seedling_type, // Alias for frontend
+                        'seedling_type' => $seedlingType,
+                        'seedlingType' => $seedlingType, // Alias for frontend
                         'quantity' => $request->quantity,
                         'purpose' => $request->purpose,
                         'contact_number' => $request->contact_number,
@@ -179,6 +188,7 @@ class RequestController extends Controller
                         'total_price' => $request->total_price,
                         'totalPrice' => $request->total_price, // Alias for frontend
                         'status' => $request->status,
+                        'request_source' => $request->request_source ?? 'walkin',
                         'created_at' => $request->created_at->format('Y-m-d H:i:s'),
                         'updated_at' => $request->updated_at->format('Y-m-d H:i:s'),
                     ];
@@ -206,13 +216,15 @@ class RequestController extends Controller
             $validator = Validator::make($request->all(), [
                 'requester_type' => 'required|string|in:client,customer',
                 'requester_id' => 'required|integer',
-                'seedling_type' => 'required|string|max:255',
+                'inventory_id' => 'required|integer|exists:inventories,id',
+                'seedling_type' => 'nullable|string|max:255',
                 'quantity' => 'required|integer|min:1',
                 'purpose' => 'required|string',
                 'contact_number' => 'nullable|string|max:20',
                 'requested_date' => 'required|date',
                 'created_by_user_type' => 'nullable|string|in:admin,staff',
                 'created_by_user_id' => 'nullable|string|max:255',
+                'request_source' => 'nullable|string|in:walkin,online',
             ]);
 
             if ($validator->fails()) {
@@ -273,9 +285,21 @@ class RequestController extends Controller
                 }
             }
 
-            // Check for existing pending/approved requests for same seedling type
+            // Get inventory item to check availability and get price
+            $inventory = \App\Models\Inventory::where('id', $request->inventory_id)
+                ->where('status', 'Available')
+                ->first();
+
+            if (!$inventory) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Seedling type not available in inventory'
+                ], 422);
+            }
+
+            // Check for existing pending/approved requests for same inventory item
             $existingRequestQuery = \App\Models\Request::where('requester_type', $requesterType)
-                ->where('seedling_type', $request->seedling_type)
+                ->where('inventory_id', $request->inventory_id)
                 ->whereIn('status', ['Pending', 'Approved']);
             
             if ($requesterType === 'client') {
@@ -289,19 +313,14 @@ class RequestController extends Controller
             if ($existingRequest) {
                 return response()->json([
                     'success' => false,
-                    'message' => "This user already has a {$existingRequest->status} request for {$request->seedling_type}. Please wait until it is Released or Rejected before requesting again."
+                    'message' => "This user already has a {$existingRequest->status} request for {$inventory->seedling_type}. Please wait until it is Released or Rejected before requesting again."
                 ], 422);
             }
-
-            // Get inventory item to check availability and get price
-            $inventory = \App\Models\Inventory::where('seedling_type', $request->seedling_type)
-                ->where('status', 'Available')
-                ->first();
 
             if (!$inventory) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Seedling type not available in inventory'
+                    'message' => 'Seedling not available in inventory'
                 ], 422);
             }
 
@@ -341,10 +360,16 @@ class RequestController extends Controller
                 ? 'Approved' 
                 : 'Pending';
 
+            // Determine request source: if created by admin/staff, it's walkin. Otherwise, use provided or default to online
+            $requestSource = ($createdByUserType === 'admin' || $createdByUserType === 'staff')
+                ? 'walkin'
+                : ($request->input('request_source', 'online'));
+
             // Create the request with appropriate IDs
             $requestData = [
                 'requester_type' => $requesterType,
-                'seedling_type' => $request->seedling_type,
+                'inventory_id' => $request->inventory_id,
+                'seedling_type' => $inventory->seedling_type, // Store for fallback/history
                 'quantity' => $quantity,
                 'purpose' => $request->purpose,
                 'contact_number' => $request->contact_number,
@@ -352,6 +377,7 @@ class RequestController extends Controller
                 'price_per_unit' => $pricePerUnit,
                 'total_price' => $totalPrice,
                 'status' => $initialStatus,
+                'request_source' => $requestSource,
             ];
 
             // Set appropriate ID based on requester type

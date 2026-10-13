@@ -108,9 +108,12 @@ class ClientController extends Controller
                         }
                     }
                 ],
+                'suffix' => 'nullable|string|max:10',
                 'barangay' => 'required|string|max:255',
                 'municipality' => 'required|string|max:255',
                 'province' => 'required|string|max:255',
+                'region' => 'required|string|max:255',
+                'purok' => 'nullable|string|max:255',
                 'password' => [
                     'nullable',
                     'string',
@@ -138,11 +141,14 @@ class ClientController extends Controller
                 'first_name' => $request->first_name,
                 'middle_name' => $request->middle_name,
                 'last_name' => $request->last_name,
+                'suffix' => $request->suffix,
                 'email' => $request->email,
                 'contact_number' => $request->contact_number,
                 'barangay' => $request->barangay,
                 'municipality' => $request->municipality,
                 'province' => $request->province,
+                'region' => $request->region,
+                'purok' => $request->purok,
             ];
 
             // Only hash and add password if provided
@@ -239,9 +245,12 @@ class ClientController extends Controller
                         }
                     }
                 ],
+                'suffix' => 'nullable|string|max:10',
                 'barangay' => 'sometimes|string|max:255',
                 'municipality' => 'sometimes|string|max:255',
                 'province' => 'sometimes|string|max:255',
+                'region' => 'sometimes|string|max:255',
+                'purok' => 'nullable|string|max:255',
                 'password' => 'nullable|string|min:8|confirmed',
             ]);
 
