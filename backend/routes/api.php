@@ -37,6 +37,12 @@ Route::middleware('api')->group(function () {
     Route::put('profile', [AuthController::class, 'updateProfile']);
     Route::post('change-password', [AuthController::class, 'changePassword']);
 });
+
+// Handle preflight OPTIONS requests for CORS
+Route::options('{any}', function () {
+    return response()->json([], 200);
+})->where('any', '.*');
+
 // Protected routes (requires authentication if needed in future)
 Route::middleware('api')->group(function () {
     // Client routes
