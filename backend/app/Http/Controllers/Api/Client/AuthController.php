@@ -131,8 +131,8 @@ class AuthController extends Controller
                 ], 403);
             }
 
-            // Create token
-            $token = $client->createToken('client-token')->plainTextToken;
+            // Generate simple token (without Sanctum)
+            $token = base64_encode($client->id . '|' . $client->email . '|' . time());
 
             return response()->json([
                 'success' => true,
@@ -164,7 +164,8 @@ class AuthController extends Controller
     public function logout(Request $request)
     {
         try {
-            $request->user()->currentAccessToken()->delete();
+            // Simple logout - just return success
+            // Frontend will clear the token from localStorage
 
             return response()->json([
                 'success' => true,
@@ -186,9 +187,40 @@ class AuthController extends Controller
     public function me(Request $request)
     {
         try {
+            // Get token from Authorization header
+            $token = $request->bearerToken();
+            
+            if (!$token) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 401);
+            }
+
+            // Decode simple token
+            $decoded = base64_decode($token);
+            $parts = explode('|', $decoded);
+            
+            if (count($parts) !== 3) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid token'
+                ], 401);
+            }
+
+            $clientId = $parts[0];
+            $client = Client::find($clientId);
+
+            if (!$client) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Client not found'
+                ], 404);
+            }
+
             return response()->json([
                 'success' => true,
-                'data' => $request->user()
+                'data' => $client
             ], 200);
 
         } catch (\Exception $e) {
