@@ -12,14 +12,6 @@ use Illuminate\Support\Facades\Validator;
 
 class CustomerController extends Controller
 {
-    public function __construct()
-    {
-        // Add CORS headers for all methods
-        header('Access-Control-Allow-Origin: *');
-        header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-        header('Access-Control-Allow-Headers: Content-Type, Accept, Authorization, X-Requested-With');
-    }
-
     /**
      * Generate next customer ID
      */
