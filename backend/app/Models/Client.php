@@ -4,11 +4,10 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Laravel\Sanctum\HasApiTokens;
 
 class Client extends Model
 {
-    use HasFactory, HasApiTokens;
+    use HasFactory;
 
     protected $fillable = [
         'client_id',
