@@ -524,6 +524,47 @@ class RequestController extends Controller
                 'price_per_unit'
             ]);
 
+            // Handle quantity change for Pending requests (client editing their order)
+            if (isset($updateData['quantity']) && $request->status === 'Pending' && $request->inventory_id) {
+                $oldQuantity = $request->quantity;
+                $newQuantity = $updateData['quantity'];
+                $quantityDiff = $newQuantity - $oldQuantity;
+                
+                if ($quantityDiff != 0) {
+                    $inventory = \App\Models\Inventory::find($request->inventory_id);
+                    
+                    if ($inventory) {
+                        // Check if new quantity is available
+                        $availableQuantity = $inventory->total_quantity - $inventory->reserved_quantity;
+                        
+                        if ($quantityDiff > 0 && $quantityDiff > $availableQuantity) {
+                            return response()->json([
+                                'success' => false,
+                                'message' => "Insufficient stock. Only {$availableQuantity} units available."
+                            ], 400);
+                        }
+                        
+                        // Update inventory: return old quantity, reserve new quantity
+                        $inventory->reserved_quantity += $quantityDiff;
+                        $inventory->total_quantity -= $quantityDiff;
+                        $inventory->save();
+                        
+                        // Log the activity
+                        ActivityLogService::log(
+                            'request_quantity_updated',
+                            'Request',
+                            $request->id,
+                            "Updated request quantity from {$oldQuantity} to {$newQuantity}",
+                            [
+                                'old_quantity' => $oldQuantity,
+                                'new_quantity' => $newQuantity,
+                                'inventory_id' => $inventory->id
+                            ]
+                        );
+                    }
+                }
+            }
+
             // Handle status change to Rejected - return quantity to inventory
             if (isset($updateData['status']) && $updateData['status'] === 'Rejected' && $oldStatus === 'Pending') {
                 $inventory = \App\Models\Inventory::where('seedling_type', $request->seedling_type)->first();
@@ -625,21 +666,53 @@ class RequestController extends Controller
 
     /**
      * Remove the specified request.
+     * Returns inventory if request status is Pending.
      */
     public function destroy($id)
     {
         try {
+            DB::beginTransaction();
+            
             $request = Request::findOrFail($id);
+            
+            // If request is Pending, return the reserved quantity to inventory
+            if ($request->status === 'Pending' && $request->inventory_id) {
+                $inventory = \App\Models\Inventory::find($request->inventory_id);
+                if ($inventory) {
+                    // Return reserved quantity back to available quantity
+                    $inventory->reserved_quantity -= $request->quantity;
+                    $inventory->total_quantity += $request->quantity;
+                    $inventory->save();
+                    
+                    // Log the activity
+                    ActivityLogService::log(
+                        'request_cancelled',
+                        'Request',
+                        $request->id,
+                        "Cancelled request and returned {$request->quantity} {$request->seedling_type} to inventory",
+                        [
+                            'request_id' => $request->id,
+                            'seedling_type' => $request->seedling_type,
+                            'quantity_returned' => $request->quantity,
+                            'inventory_id' => $inventory->id
+                        ]
+                    );
+                }
+            }
+            
             $request->delete();
+            
+            DB::commit();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Request deleted successfully'
+                'message' => 'Request cancelled successfully'
             ]);
         } catch (\Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'success' => false,
-                'message' => 'Error deleting request',
+                'message' => 'Error cancelling request',
                 'error' => $e->getMessage()
             ], 500);
         }
