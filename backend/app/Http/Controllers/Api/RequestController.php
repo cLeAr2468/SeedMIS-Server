@@ -547,6 +547,14 @@ class RequestController extends Controller
                         // Update inventory: return old quantity, reserve new quantity
                         $inventory->reserved_quantity += $quantityDiff;
                         $inventory->total_quantity -= $quantityDiff;
+                        
+                        // Update status based on new total quantity
+                        if ($inventory->total_quantity > 0) {
+                            $inventory->status = 'Available';
+                        } else {
+                            $inventory->status = 'Not Available';
+                        }
+                        
                         $inventory->save();
                         
                         // Log the activity
@@ -558,7 +566,8 @@ class RequestController extends Controller
                             [
                                 'old_quantity' => $oldQuantity,
                                 'new_quantity' => $newQuantity,
-                                'inventory_id' => $inventory->id
+                                'inventory_id' => $inventory->id,
+                                'new_inventory_status' => $inventory->status
                             ]
                         );
                     }
@@ -682,6 +691,12 @@ class RequestController extends Controller
                     // Return reserved quantity back to available quantity
                     $inventory->reserved_quantity -= $request->quantity;
                     $inventory->total_quantity += $request->quantity;
+                    
+                    // Update status to Available if quantity is now greater than 0
+                    if ($inventory->total_quantity > 0) {
+                        $inventory->status = 'Available';
+                    }
+                    
                     $inventory->save();
                     
                     // Log the activity
@@ -694,7 +709,8 @@ class RequestController extends Controller
                             'request_id' => $request->id,
                             'seedling_type' => $request->seedling_type,
                             'quantity_returned' => $request->quantity,
-                            'inventory_id' => $inventory->id
+                            'inventory_id' => $inventory->id,
+                            'new_status' => $inventory->status
                         ]
                     );
                 }
