@@ -111,16 +111,26 @@ class AuthController extends Controller
 
             $email = $request->email;
             $userType = null;
+            $userName = null;
 
             // Check if admin
             $admin = Admin::where('email', $email)->first();
             if ($admin) {
                 $userType = 'admin';
+                $userName = $admin->name;
             } else {
                 // Check if staff
                 $staff = Staff::where('email', $email)->first();
                 if ($staff) {
                     $userType = 'staff';
+                    $userName = trim($staff->first_name . ' ' . $staff->last_name);
+                } else {
+                    // Check if client
+                    $client = Client::where('email', $email)->first();
+                    if ($client) {
+                        $userType = 'client';
+                        $userName = trim($client->first_name . ' ' . $client->last_name);
+                    }
                 }
             }
 
@@ -149,7 +159,6 @@ class AuthController extends Controller
 
             // Send OTP via email to user's actual email
             try {
-                $userName = $admin ? $admin->name : ($staff->first_name . ' ' . $staff->last_name);
                 Mail::to($email)->send(new PasswordResetOTP($otp, $userName));
                 
                 \Log::info('OTP email sent successfully to: ' . $email);
@@ -259,13 +268,17 @@ class AuthController extends Controller
                 ], 401);
             }
 
-            // Update password
+            // Update password based on user type
             if ($reset->user_type === 'admin') {
                 Admin::where('email', $request->email)->update([
                     'password' => Hash::make($request->password)
                 ]);
-            } else {
+            } elseif ($reset->user_type === 'staff') {
                 Staff::where('email', $request->email)->update([
+                    'password' => Hash::make($request->password)
+                ]);
+            } elseif ($reset->user_type === 'client') {
+                Client::where('email', $request->email)->update([
                     'password' => Hash::make($request->password)
                 ]);
             }
