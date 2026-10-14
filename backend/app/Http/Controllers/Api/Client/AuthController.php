@@ -233,7 +233,7 @@ class AuthController extends Controller
     }
 
     /**
-     * Forgot password - send reset link
+     * Forgot password - send OTP
      */
     public function forgotPassword(Request $request)
     {
@@ -259,18 +259,250 @@ class AuthController extends Controller
                 ], 404);
             }
 
-            // TODO: Send password reset email
-            // For now, just return success
-            
+            // Generate OTP
+            $otp = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
+
+            // Delete old OTP
+            \DB::table('password_resets')->where('email', $request->email)->delete();
+
+            // Store OTP
+            \DB::table('password_resets')->insert([
+                'email' => $request->email,
+                'otp' => $otp,
+                'user_type' => 'client',
+                'expires_at' => now()->addMinutes(10),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            // Send OTP via email
+            try {
+                $userName = trim($client->first_name . ' ' . $client->last_name);
+                \Mail::to($request->email)->send(new \App\Mail\PasswordResetOTP($otp, $userName));
+                
+                \Log::info('OTP email sent successfully to: ' . $request->email);
+            } catch (\Exception $e) {
+                // Log email error
+                \Log::error('Failed to send OTP email: ' . $e->getMessage());
+                \Log::error('Email config - Host: ' . config('mail.host') . ', Port: ' . config('mail.port'));
+                
+                // Still return success with OTP for development (remove in production)
+                return response()->json([
+                    'success' => true,
+                    'message' => 'OTP generated (email failed)',
+                    'otp' => $otp, // For development only
+                    'email_error' => $e->getMessage()
+                ], 200);
+            }
+
             return response()->json([
                 'success' => true,
-                'message' => 'Password reset link has been sent to your email.'
+                'message' => 'OTP sent to your email',
+                'otp' => $otp // Remove in production
             ], 200);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to process request',
+                'message' => 'Failed to send OTP',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Verify OTP
+     */
+    public function verifyOtp(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'email' => 'required|email',
+                'otp' => 'required|string|size:6',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $reset = \DB::table('password_resets')
+                ->where('email', $request->email)
+                ->where('otp', $request->otp)
+                ->where('user_type', 'client')
+                ->where('expires_at', '>', now())
+                ->first();
+
+            if (!$reset) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid or expired OTP'
+                ], 401);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'OTP verified successfully',
+                'data' => [
+                    'email' => $reset->email
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'OTP verification failed',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Reset password with OTP
+     */
+    public function resetPassword(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'email' => 'required|email',
+                'otp' => 'required|string|size:6',
+                'password' => [
+                    'required',
+                    'string',
+                    'min:8',
+                    'confirmed',
+                    'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]+$/'
+                ],
+            ], [
+                'password.regex' => 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&#)',
+                'password.min' => 'Password must be at least 8 characters long',
+                'password.confirmed' => 'Password confirmation does not match',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $reset = \DB::table('password_resets')
+                ->where('email', $request->email)
+                ->where('otp', $request->otp)
+                ->where('user_type', 'client')
+                ->where('expires_at', '>', now())
+                ->first();
+
+            if (!$reset) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid or expired OTP'
+                ], 401);
+            }
+
+            // Update password
+            Client::where('email', $request->email)->update([
+                'password' => Hash::make($request->password)
+            ]);
+
+            // Delete OTP
+            \DB::table('password_resets')->where('email', $request->email)->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Password reset successfully'
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Password reset failed',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    /**
+     * Update client profile
+     */
+    public function updateProfile(Request $request)
+    {
+        try {
+            // Get token from Authorization header
+            $token = $request->bearerToken();
+            
+            if (!$token) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 401);
+            }
+
+            // Decode simple token
+            $decoded = base64_decode($token);
+            $parts = explode('|', $decoded);
+            
+            if (count($parts) !== 3) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid token'
+                ], 401);
+            }
+
+            $clientId = $parts[0];
+            $client = Client::find($clientId);
+
+            if (!$client) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Client not found'
+                ], 404);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'organization' => 'sometimes|string|max:255',
+                'first_name' => 'sometimes|string|max:255',
+                'middle_name' => 'nullable|string|max:255',
+                'last_name' => 'sometimes|string|max:255',
+                'suffix' => 'nullable|string|max:10',
+                'email' => 'sometimes|email|unique:clients,email,' . $clientId,
+                'contact_number' => 'sometimes|string|max:20',
+                'purok' => 'nullable|string|max:255',
+                'barangay' => 'sometimes|string|max:255',
+                'municipality' => 'sometimes|string|max:255',
+                'province' => 'sometimes|string|max:255',
+                'region' => 'nullable|string|max:255',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Update client profile
+            $client->update($request->only([
+                'organization', 'first_name', 'middle_name', 'last_name', 'suffix',
+                'email', 'contact_number', 'purok', 'barangay', 
+                'municipality', 'province', 'region'
+            ]));
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Profile updated successfully',
+                'data' => $client
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update profile',
                 'error' => $e->getMessage()
             ], 500);
         }

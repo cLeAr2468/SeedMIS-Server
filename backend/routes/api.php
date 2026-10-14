@@ -204,9 +204,12 @@ Route::prefix('client')->group(function () {
     Route::post('/register', [App\Http\Controllers\Api\Client\AuthController::class, 'register']);
     Route::post('/login', [App\Http\Controllers\Api\Client\AuthController::class, 'login']);
     Route::post('/forgot-password', [App\Http\Controllers\Api\Client\AuthController::class, 'forgotPassword']);
+    Route::post('/verify-otp', [App\Http\Controllers\Api\Client\AuthController::class, 'verifyOtp']);
+    Route::post('/reset-password', [App\Http\Controllers\Api\Client\AuthController::class, 'resetPassword']);
     
     // Protected routes (simple auth without Sanctum)
     Route::post('/logout', [App\Http\Controllers\Api\Client\AuthController::class, 'logout']);
     Route::get('/me', [App\Http\Controllers\Api\Client\AuthController::class, 'me']);
+    Route::put('/profile', [App\Http\Controllers\Api\Client\AuthController::class, 'updateProfile']);
     Route::get('/requests', [App\Http\Controllers\Api\Client\RequestController::class, 'index']);
 });
