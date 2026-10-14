@@ -22,7 +22,7 @@ class RequestController extends Controller
         try {
             $seedlings = \App\Models\Inventory::where('status', 'Available')
                 ->where('total_quantity', '>', 0)
-                ->select('id', 'seedling_type', 'price_per_unit', 'total_quantity')
+                ->select('id', 'seedling_type', 'price_per_unit', 'total_quantity', 'image_url', 'created_at')
                 ->orderBy('seedling_type', 'asc')
                 ->get();
 
