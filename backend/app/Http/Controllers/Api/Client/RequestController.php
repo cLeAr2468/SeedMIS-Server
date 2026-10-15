@@ -31,6 +31,9 @@ class RequestController extends Controller
                         'price_per_unit' => $req->price_per_unit,
                         'total_price' => $req->total_price,
                         'status' => $req->status,
+                        'request_source' => $req->request_source,
+                        'cancellation_reason' => $req->cancellation_reason,
+                        'rejection_reason' => $req->rejection_reason,
                         'created_at' => $req->created_at->format('Y-m-d H:i:s'),
                         'updated_at' => $req->updated_at->format('Y-m-d H:i:s'),
                     ];

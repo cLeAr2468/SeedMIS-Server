@@ -189,6 +189,8 @@ class RequestController extends Controller
                         'totalPrice' => $request->total_price, // Alias for frontend
                         'status' => $request->status,
                         'request_source' => $request->request_source ?? 'walkin',
+                        'cancellation_reason' => $request->cancellation_reason,
+                        'rejection_reason' => $request->rejection_reason,
                         'created_at' => $request->created_at->format('Y-m-d H:i:s'),
                         'updated_at' => $request->updated_at->format('Y-m-d H:i:s'),
                     ];
@@ -418,6 +420,9 @@ class RequestController extends Controller
                     'price_per_unit' => $newRequest->price_per_unit,
                     'total_price' => $newRequest->total_price,
                     'status' => $newRequest->status,
+                    'request_source' => $newRequest->request_source,
+                    'cancellation_reason' => $newRequest->cancellation_reason,
+                    'rejection_reason' => $newRequest->rejection_reason,
                     'created_at' => $newRequest->created_at->format('Y-m-d H:i:s'),
                 ]
             ], 201);
@@ -458,6 +463,9 @@ class RequestController extends Controller
                     'price_per_unit' => $request->price_per_unit,
                     'total_price' => $request->total_price,
                     'status' => $request->status,
+                    'request_source' => $request->request_source,
+                    'cancellation_reason' => $request->cancellation_reason,
+                    'rejection_reason' => $request->rejection_reason,
                     'client' => $request->requester_type === 'client' ? $request->client : null,
                     'customer' => $request->requester_type === 'customer' ? $request->customer : null,
                     'created_at' => $request->created_at->format('Y-m-d H:i:s'),
@@ -502,8 +510,10 @@ class RequestController extends Controller
                 'purpose' => 'sometimes|string',
                 'contact_number' => 'nullable|string|max:20',
                 'requested_date' => 'sometimes|date',
-                'status' => 'sometimes|in:Pending,Approved,Rejected,Released',
+                'status' => 'sometimes|in:Pending,Approved,Rejected,Released,Cancelled',
                 'price_per_unit' => 'nullable|numeric|min:0',
+                'rejection_reason' => 'nullable|string|min:10|max:500',
+                'cancellation_reason' => 'nullable|string|min:10|max:500',
             ]);
 
             if ($validator->fails()) {
@@ -521,7 +531,16 @@ class RequestController extends Controller
                 'contact_number',
                 'requested_date',
                 'status',
-                'price_per_unit'
+                'price_per_unit',
+                'rejection_reason',
+                'cancellation_reason'
+            ]);
+
+            // Debug log
+            \Log::info('Update request data received:', [
+                'request_id' => $id,
+                'update_data' => $updateData,
+                'old_status' => $oldStatus
             ]);
 
             // Handle quantity change for Pending requests (client editing their order)
@@ -557,19 +576,8 @@ class RequestController extends Controller
                         
                         $inventory->save();
                         
-                        // Log the activity
-                        ActivityLogService::log(
-                            'request_quantity_updated',
-                            'Request',
-                            $request->id,
-                            "Updated request quantity from {$oldQuantity} to {$newQuantity}",
-                            [
-                                'old_quantity' => $oldQuantity,
-                                'new_quantity' => $newQuantity,
-                                'inventory_id' => $inventory->id,
-                                'new_inventory_status' => $inventory->status
-                            ]
-                        );
+                        // Note: Activity logging removed since we don't have user context in client edits
+                        // Client-initiated quantity changes are tracked via the request update itself
                     }
                 }
             }
@@ -595,6 +603,24 @@ class RequestController extends Controller
                 $this->sendStatusEmail($request, 'Rejected');
             }
 
+            // Handle status change to Cancelled - return quantity to inventory
+            if (isset($updateData['status']) && $updateData['status'] === 'Cancelled' && in_array($oldStatus, ['Pending', 'Approved'])) {
+                $inventory = \App\Models\Inventory::where('seedling_type', $request->seedling_type)->first();
+                
+                if ($inventory) {
+                    // Return reserved quantity back to total quantity
+                    $inventory->total_quantity += $request->quantity;
+                    $inventory->reserved_quantity -= $request->quantity;
+                    
+                    // Update status to Available if quantity is now greater than 0
+                    if ($inventory->total_quantity > 0) {
+                        $inventory->status = 'Available';
+                    }
+                    
+                    $inventory->save();
+                }
+            }
+
             // Handle status change to Approved - keep quantity reserved
             if (isset($updateData['status']) && $updateData['status'] === 'Approved' && $oldStatus === 'Pending') {
                 // Quantity remains reserved in inventory
@@ -607,6 +633,24 @@ class RequestController extends Controller
 
             // Handle status change to Released - deduct from reserved quantity
             if (isset($updateData['status']) && $updateData['status'] === 'Released' && $oldStatus === 'Approved') {
+                // Validate: Cannot release before scheduled date
+                $requestedDate = $request->requested_date;
+                $today = date('Y-m-d');
+                
+                if ($requestedDate && $requestedDate > $today) {
+                    $daysUntil = (strtotime($requestedDate) - strtotime($today)) / 86400;
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Cannot release before scheduled date. Pickup is scheduled for " . date('F j, Y', strtotime($requestedDate)) . " (" . ceil($daysUntil) . " days from now)."
+                    ], 400);
+                }
+                
+                // Optional warning if very late (>7 days)
+                $daysLate = 0;
+                if ($requestedDate && $requestedDate < $today) {
+                    $daysLate = (strtotime($today) - strtotime($requestedDate)) / 86400;
+                }
+                
                 $inventory = \App\Models\Inventory::where('seedling_type', $request->seedling_type)->first();
                 
                 if ($inventory) {
@@ -626,6 +670,11 @@ class RequestController extends Controller
 
                 // Send release email
                 $this->sendStatusEmail($request, 'Released');
+                
+                // Log if late pickup
+                if ($daysLate > 7) {
+                    \Log::info("Late pickup: Request #{$request->id} picked up " . ceil($daysLate) . " days after scheduled date");
+                }
             }
 
             // Recalculate total price if quantity or price_per_unit changed
@@ -674,64 +723,15 @@ class RequestController extends Controller
     }
 
     /**
-     * Remove the specified request.
-     * Returns inventory if request status is Pending.
+     * Remove the specified request (disabled - use update with status=Cancelled instead).
+     * This method is kept for API compatibility but should not be used.
      */
     public function destroy($id)
     {
-        try {
-            DB::beginTransaction();
-            
-            $request = Request::findOrFail($id);
-            
-            // If request is Pending, return the reserved quantity to inventory
-            if ($request->status === 'Pending' && $request->inventory_id) {
-                $inventory = \App\Models\Inventory::find($request->inventory_id);
-                if ($inventory) {
-                    // Return reserved quantity back to available quantity
-                    $inventory->reserved_quantity -= $request->quantity;
-                    $inventory->total_quantity += $request->quantity;
-                    
-                    // Update status to Available if quantity is now greater than 0
-                    if ($inventory->total_quantity > 0) {
-                        $inventory->status = 'Available';
-                    }
-                    
-                    $inventory->save();
-                    
-                    // Log the activity
-                    ActivityLogService::log(
-                        'request_cancelled',
-                        'Request',
-                        $request->id,
-                        "Cancelled request and returned {$request->quantity} {$request->seedling_type} to inventory",
-                        [
-                            'request_id' => $request->id,
-                            'seedling_type' => $request->seedling_type,
-                            'quantity_returned' => $request->quantity,
-                            'inventory_id' => $inventory->id,
-                            'new_status' => $inventory->status
-                        ]
-                    );
-                }
-            }
-            
-            $request->delete();
-            
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Request cancelled successfully'
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Error cancelling request',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+        return response()->json([
+            'success' => false,
+            'message' => 'Direct deletion is not allowed. Please update the request status to Cancelled with a reason.'
+        ], 400);
     }
 
     /**
@@ -750,6 +750,75 @@ class RequestController extends Controller
         ];
 
         return $prices[$seedlingType] ?? 5.00; // Default price
+    }
+
+    /**
+     * Cancel a request with reason (updates status to Cancelled instead of deleting).
+     */
+    public function cancel(HttpRequest $httpRequest, $id)
+    {
+        try {
+            DB::beginTransaction();
+            
+            $validator = Validator::make($httpRequest->all(), [
+                'cancellation_reason' => 'required|string|min:10|max:500',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+            
+            $request = Request::findOrFail($id);
+            
+            // Only allow cancelling Pending requests
+            if ($request->status !== 'Pending') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only pending requests can be cancelled'
+                ], 400);
+            }
+            
+            // Return the reserved quantity to inventory
+            if ($request->inventory_id) {
+                $inventory = \App\Models\Inventory::find($request->inventory_id);
+                if ($inventory) {
+                    // Return reserved quantity back to available quantity
+                    $inventory->reserved_quantity -= $request->quantity;
+                    $inventory->total_quantity += $request->quantity;
+                    
+                    // Update status to Available if quantity is now greater than 0
+                    if ($inventory->total_quantity > 0) {
+                        $inventory->status = 'Available';
+                    }
+                    
+                    $inventory->save();
+                }
+            }
+            
+            // Update status to Cancelled and store reason
+            $request->update([
+                'status' => 'Cancelled',
+                'cancellation_reason' => $httpRequest->input('cancellation_reason')
+            ]);
+            
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Request cancelled successfully. Quantity returned to inventory.'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Error cancelling request',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

@@ -127,24 +127,47 @@ class DashboardController extends Controller
                 ];
             }
 
-            // Production vs Ready Chart (Monthly data for current year from production_history)
-            $monthlyProduction = DB::table('production_history')
+            // Production vs Ready Chart (Monthly data for current year)
+            // Sown: Created batches
+            // Ready: ALL batches that reached Ready stage (one-time count per batch when it became Ready)
+            
+            // Get unique batches that reached Ready stage (using DISTINCT batch_id)
+            $readyBatches = DB::table('production_history')
+                ->select('batch_id', DB::raw('MIN(changed_at) as first_ready_date'), 'new_quantity')
+                ->where('new_stage', 'Ready')
                 ->whereYear('changed_at', $currentYear)
-                ->select(
-                    DB::raw('MONTH(changed_at) as month'),
-                    DB::raw('SUM(CASE WHEN action_type = "created" THEN new_quantity ELSE 0 END) as sown'),
-                    DB::raw('SUM(CASE WHEN new_stage = "Ready" AND action_type = "stage_update" THEN new_quantity ELSE 0 END) as ready')
-                )
-                ->groupBy('month')
-                ->orderBy('month')
+                ->groupBy('batch_id', 'new_quantity')
                 ->get();
+            
+            // Get sown batches by month
+            $sownByMonth = DB::table('production_history')
+                ->where('action_type', 'created')
+                ->whereYear('changed_at', $currentYear)
+                ->selectRaw('MONTH(changed_at) as month, SUM(new_quantity) as sown')
+                ->groupBy('month')
+                ->get()
+                ->keyBy('month');
+            
+            // Group ready batches by month they became ready
+            $readyByMonth = [];
+            foreach ($readyBatches as $batch) {
+                $month = date('n', strtotime($batch->first_ready_date)); // 1-12
+                if (!isset($readyByMonth[$month])) {
+                    $readyByMonth[$month] = 0;
+                }
+                $readyByMonth[$month] += $batch->new_quantity;
+            }
 
+            // Build chart data for all 12 months
             $productionChart = [];
-            foreach ($monthlyProduction as $prod) {
+            for ($month = 1; $month <= 12; $month++) {
+                $sown = $sownByMonth->get($month)?->sown ?? 0;
+                $ready = $readyByMonth[$month] ?? 0;
+                
                 $productionChart[] = [
-                    'month' => date('M', mktime(0, 0, 0, $prod->month, 1)),
-                    'sown' => (float) $prod->sown,
-                    'ready' => (float) $prod->ready,
+                    'month' => date('M', mktime(0, 0, 0, $month, 1)),
+                    'sown' => (float) $sown,
+                    'ready' => (float) $ready,
                 ];
             }
 

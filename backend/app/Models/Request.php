@@ -23,6 +23,8 @@ class Request extends Model
         'total_price',
         'status',
         'request_source',
+        'cancellation_reason',
+        'rejection_reason',
     ];
 
     protected $casts = [
