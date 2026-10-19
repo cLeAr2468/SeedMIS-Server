@@ -188,7 +188,10 @@
                 <p>We wanted to inform you about the status of your seedling request.</p>
                 
                 <div class="message-box error">
-                    <strong>Unfortunately, your request could not be approved at this time.</strong> Please contact us for more information or to submit a new request.
+                    <strong>Unfortunately, your request could not be approved at this time.</strong>
+                    @if($request->rejection_reason)
+                        <p style="margin-top: 10px; margin-bottom: 0;"><strong>Reason:</strong> {{ $request->rejection_reason }}</p>
+                    @endif
                 </div>
             @elseif($status === 'Released')
                 <p>Excellent news! Your seedlings are now <strong>ready for pickup</strong>!</p>
@@ -244,7 +247,7 @@
             @if($status === 'Approved')
                 <p>Your seedlings are now reserved and being prepared. You will receive another notification once they are ready for pickup.</p>
             @elseif($status === 'Rejected')
-                <p>If you have any questions or concerns about this decision, please don't hesitate to contact us. We're here to help!</p>
+                <p>If you have any questions or concerns about this decision, please don't hesitate to contact us. We're here to help and can discuss alternative options with you.</p>
             @elseif($status === 'Released')
                 <p><strong>Next Steps:</strong></p>
                 <ul>

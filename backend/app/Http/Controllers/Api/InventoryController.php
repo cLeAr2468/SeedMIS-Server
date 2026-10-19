@@ -74,7 +74,7 @@ class InventoryController extends Controller
     {
         try {
             $validator = Validator::make($request->all(), [
-                'seedling_type' => 'required|string|unique:inventories,seedling_type|max:255',
+                'seedling_type' => 'required|string|max:255',
                 'classification' => 'required|in:Grafted,Seedling',
                 'total_quantity' => 'required|integer|min:0',
                 'price_per_unit' => 'required|numeric|min:0',
@@ -90,6 +90,18 @@ class InventoryController extends Controller
                     'success' => false,
                     'message' => 'Validation failed',
                     'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Check for duplicate seedling_type + classification combination
+            $exists = \App\Models\Inventory::where('seedling_type', $request->seedling_type)
+                ->where('classification', $request->classification)
+                ->exists();
+                
+            if ($exists) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "This seedling type with {$request->classification} classification already exists in inventory."
                 ], 422);
             }
 
@@ -159,7 +171,7 @@ class InventoryController extends Controller
             $inventory = Inventory::findOrFail($id);
 
             $validator = Validator::make($request->all(), [
-                'seedling_type' => 'sometimes|string|unique:inventories,seedling_type,' . $id . '|max:255',
+                'seedling_type' => 'sometimes|string|max:255',
                 'classification' => 'sometimes|in:Grafted,Seedling',
                 'total_quantity' => 'sometimes|integer|min:0',
                 'price_per_unit' => 'sometimes|numeric|min:0',
@@ -176,6 +188,24 @@ class InventoryController extends Controller
                     'message' => 'Validation failed',
                     'errors' => $validator->errors()
                 ], 422);
+            }
+
+            // Check for duplicate seedling_type + classification combination (excluding current record)
+            if ($request->has('seedling_type') || $request->has('classification')) {
+                $seedlingType = $request->input('seedling_type', $inventory->seedling_type);
+                $classification = $request->input('classification', $inventory->classification);
+                
+                $exists = \App\Models\Inventory::where('seedling_type', $seedlingType)
+                    ->where('classification', $classification)
+                    ->where('id', '!=', $id)
+                    ->exists();
+                    
+                if ($exists) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "This seedling type with {$classification} classification already exists in inventory."
+                    ], 422);
+                }
             }
 
             // Store old values for activity logging

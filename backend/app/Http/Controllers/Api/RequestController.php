@@ -22,7 +22,7 @@ class RequestController extends Controller
         try {
             $seedlings = \App\Models\Inventory::where('status', 'Available')
                 ->where('total_quantity', '>', 0)
-                ->select('id', 'seedling_type', 'price_per_unit', 'total_quantity', 'image_url', 'created_at')
+                ->select('id', 'seedling_type', 'classification', 'price_per_unit', 'total_quantity', 'image_url', 'created_at')
                 ->orderBy('seedling_type', 'asc')
                 ->get();
 
@@ -296,33 +296,6 @@ class RequestController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => 'Seedling type not available in inventory'
-                ], 422);
-            }
-
-            // Check for existing pending/approved requests for same inventory item
-            $existingRequestQuery = \App\Models\Request::where('requester_type', $requesterType)
-                ->where('inventory_id', $request->inventory_id)
-                ->whereIn('status', ['Pending', 'Approved']);
-            
-            if ($requesterType === 'client') {
-                $existingRequestQuery->where('client_id', $requesterId);
-            } else {
-                $existingRequestQuery->where('customer_id', $requesterId);
-            }
-            
-            $existingRequest = $existingRequestQuery->first();
-
-            if ($existingRequest) {
-                return response()->json([
-                    'success' => false,
-                    'message' => "This user already has a {$existingRequest->status} request for {$inventory->seedling_type}. Please wait until it is Released or Rejected before requesting again."
-                ], 422);
-            }
-
-            if (!$inventory) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Seedling not available in inventory'
                 ], 422);
             }
 
@@ -633,17 +606,9 @@ class RequestController extends Controller
 
             // Handle status change to Released - deduct from reserved quantity
             if (isset($updateData['status']) && $updateData['status'] === 'Released' && $oldStatus === 'Approved') {
-                // Validate: Cannot release before scheduled date
+                // Date validation removed - allow release regardless of scheduled date
                 $requestedDate = $request->requested_date;
                 $today = date('Y-m-d');
-                
-                if ($requestedDate && $requestedDate > $today) {
-                    $daysUntil = (strtotime($requestedDate) - strtotime($today)) / 86400;
-                    return response()->json([
-                        'success' => false,
-                        'message' => "Cannot release before scheduled date. Pickup is scheduled for " . date('F j, Y', strtotime($requestedDate)) . " (" . ceil($daysUntil) . " days from now)."
-                    ], 400);
-                }
                 
                 // Optional warning if very late (>7 days)
                 $daysLate = 0;

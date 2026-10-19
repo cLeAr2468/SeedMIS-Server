@@ -22,7 +22,7 @@ class ReportController extends Controller
             $endDate = $request->input('end_date');
             $status = $request->input('status', 'Released'); // Default to Released
 
-            $query = Request::with('client')
+            $query = Request::with(['client', 'customer'])
                 ->where('status', $status);
 
             if ($startDate && $endDate) {
@@ -32,22 +32,32 @@ class ReportController extends Controller
             $distributions = $query->orderBy('requested_date', 'desc')->get();
 
             $data = $distributions->map(function ($req) {
-                // Get client info from loaded relationship
+                // Get requester info - check both client and customer
                 $clientName = 'N/A';
                 $organization = 'N/A';
                 $contactNumber = 'N/A';
                 
-                if ($req->client) {
-                    // Combine first_name, middle_name, last_name
+                // Check if it's a client request
+                if ($req->requester_type === 'client' && $req->client) {
                     $nameParts = array_filter([
                         $req->client->first_name ?? '',
                         $req->client->middle_name ?? '',
                         $req->client->last_name ?? ''
                     ]);
                     $clientName = implode(' ', $nameParts) ?: 'N/A';
-                    
                     $organization = $req->client->organization ?? 'N/A';
                     $contactNumber = $req->client->contact_number ?? 'N/A';
+                }
+                // Check if it's a customer request
+                elseif ($req->requester_type === 'customer' && $req->customer) {
+                    $nameParts = array_filter([
+                        $req->customer->first_name ?? '',
+                        $req->customer->middle_name ?? '',
+                        $req->customer->last_name ?? ''
+                    ]);
+                    $clientName = implode(' ', $nameParts) ?: 'N/A';
+                    $organization = $req->customer->organization ?? 'Individual';
+                    $contactNumber = $req->customer->contact_number ?? 'N/A';
                 }
                 
                 // Format date properly
@@ -72,6 +82,7 @@ class ReportController extends Controller
                     'total_price' => $req->total_price,
                     'purpose' => $req->purpose ?? 'N/A',
                     'status' => $req->status,
+                    'requester_type' => $req->requester_type, // Include type for reference
                 ];
             });
 
@@ -204,7 +215,14 @@ class ReportController extends Controller
                 $productionQuery->whereBetween('date_sown', [$startDate, $endDate]);
             }
             $totalProduced = $productionQuery->sum('quantity_sown');
-            $totalReady = Production::where('stage', 'Ready')->sum('current_quantity');
+            
+            // Total Ready = Production Ready (not yet transferred) + Inventory Batches (already transferred with original quantities)
+            $productionReady = Production::where('stage', 'Ready')->sum('current_quantity');
+            
+            // Get total from inventory_batches (original quantities when transferred)
+            $inventoryReady = DB::table('inventory_batches')->sum('quantity');
+            
+            $totalReady = $productionReady + $inventoryReady;
 
             // Total Distributions
             $distributionQuery = Request::where('status', 'Released');
@@ -214,7 +232,7 @@ class ReportController extends Controller
             $totalDistributed = $distributionQuery->sum('quantity');
             $totalRevenue = $distributionQuery->sum('total_price');
 
-            // Total Inventory
+            // Total Inventory (current available stock after distributions)
             $totalInventory = Inventory::sum('total_quantity');
             $lowStockItems = Inventory::whereRaw('total_quantity <= min_stock_level')->count();
 
@@ -233,13 +251,15 @@ class ReportController extends Controller
                     'production' => [
                         'total_produced' => (int) $totalProduced,
                         'total_ready' => (int) $totalReady,
+                        'production_ready' => (int) $productionReady, // Still in production
+                        'inventory_ready' => (int) $inventoryReady,   // Already transferred
                     ],
                     'distribution' => [
                         'total_distributed' => (int) $totalDistributed,
                         'total_revenue' => (float) $totalRevenue,
                     ],
                     'inventory' => [
-                        'total_stock' => (int) $totalInventory,
+                        'total_stock' => (int) $totalInventory, // Current available
                         'low_stock_items' => (int) $lowStockItems,
                     ],
                     'by_seedling_type' => $byType,

@@ -290,7 +290,8 @@ class ProductionController extends Controller
                 ], 422);
             }
 
-            // Check if inventory already exists for this seedling type
+            // Check if inventory already exists for this seedling type with the SAME classification
+            // Allow transfer to different classification even if same seedling type exists
             $inventory = \App\Models\Inventory::where('seedling_type', $production->seedling_type)
                 ->where('classification', $production->classification)
                 ->first();
