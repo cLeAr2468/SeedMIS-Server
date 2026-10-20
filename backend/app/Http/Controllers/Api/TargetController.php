@@ -258,22 +258,62 @@ class TargetController extends Controller
     }
 
     /**
-     * Delete target
+     * Delete target and archive it
      */
-    public function destroy($id)
+    public function destroy(HttpRequest $request, $id)
     {
         try {
+            DB::beginTransaction();
+            
             $target = Target::findOrFail($id);
+            
+            // Archive the target before deleting
+            \App\Models\TargetDeletion::create([
+                'original_target_id' => $target->id,
+                'year' => (int) date('Y', strtotime($target->period)),
+                'target_seedlings' => $target->target_value,
+                'notes' => $target->description,
+                'deleted_by' => $request->user()->id ?? 1, // Get authenticated user
+                'deleted_at' => now(),
+            ]);
+            
+            // Now delete the target
             $target->delete();
+            
+            DB::commit();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Target deleted successfully'
+                'message' => 'Target deleted and archived successfully'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Error deleting target',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    /**
+     * Get target deletion history
+     */
+    public function getDeletedTargets()
+    {
+        try {
+            $deletions = \App\Models\TargetDeletion::with('deletedBy')
+                ->orderBy('deleted_at', 'desc')
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $deletions
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error deleting target',
+                'message' => 'Error fetching deleted targets',
                 'error' => $e->getMessage()
             ], 500);
         }

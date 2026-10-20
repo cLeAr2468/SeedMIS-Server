@@ -80,6 +80,7 @@ Route::middleware('api')->group(function () {
     Route::apiResource('requests', RequestController::class);
     
     // Target routes
+    Route::get('targets/deleted', [TargetController::class, 'getDeletedTargets']);
     Route::get('targets/progress', [TargetController::class, 'getProgress']);
     Route::get('targets/monthly-target-vs-actual', [TargetController::class, 'getMonthlyTargetVsActual']);
     Route::apiResource('targets', TargetController::class);
