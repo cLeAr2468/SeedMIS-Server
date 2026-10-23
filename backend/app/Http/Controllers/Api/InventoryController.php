@@ -37,10 +37,20 @@ class InventoryController extends Controller
     public function metrics()
     {
         try {
-            // Total stock = sum of all total_quantity
+            // Total stock = sum of all total_quantity with breakdown
             $totalStock = Inventory::sum('total_quantity');
+            $totalStockGrafted = Inventory::whereIn('classification', ['grafted', 'crafted'])->sum('total_quantity');
+            $totalStockSeedling = $totalStock - $totalStockGrafted;
+            
             $totalValue = Inventory::selectRaw('SUM(total_quantity * price_per_unit) as total')->first()->total ?? 0;
             $totalTypes = Inventory::count();
+            
+            // Available stock with breakdown (status = 'Available')
+            $availableStock = Inventory::where('status', 'Available')->sum('total_quantity');
+            $availableStockGrafted = Inventory::where('status', 'Available')
+                                              ->whereIn('classification', ['grafted', 'crafted'])
+                                              ->sum('total_quantity');
+            $availableStockSeedling = $availableStock - $availableStockGrafted;
             
             // Low stock: items with quantity > 0 and <= 50
             $lowStock = Inventory::where('total_quantity', '>', 0)
@@ -54,10 +64,18 @@ class InventoryController extends Controller
                 'success' => true,
                 'data' => [
                     'total_stock' => $totalStock,
+                    'total_stock_breakdown' => [
+                        'grafted' => (float) $totalStockGrafted,
+                        'seedling' => (float) $totalStockSeedling,
+                    ],
                     'total_value' => round($totalValue, 2),
                     'total_types' => $totalTypes,
                     'low_stock' => $lowStock,
                     'out_of_stock' => $outOfStock,
+                    'available_stock_breakdown' => [
+                        'grafted' => (float) $availableStockGrafted,
+                        'seedling' => (float) $availableStockSeedling,
+                    ],
                 ],
                 'message' => 'Inventory metrics retrieved successfully'
             ], 200);

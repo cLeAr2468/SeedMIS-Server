@@ -26,14 +26,20 @@ class DashboardController extends Controller
             $currentMonthEnd = date('Y-m-t');
 
             // Card Metrics - Current Month
-            // Seedlings in Production (currently growing)
+            // Seedlings in Production (currently growing) with breakdown
             $inProduction = Production::sum('current_quantity');
+            $inProductionGrafted = Production::whereIn('classification', ['grafted', 'crafted'])->sum('current_quantity');
+            $inProductionSeedling = $inProduction - $inProductionGrafted;
 
-            // Seedlings in Inventory (ready for distribution)
+            // Seedlings in Inventory (ready for distribution) with breakdown
             $inInventory = Inventory::sum('total_quantity');
+            $inInventoryGrafted = Inventory::whereIn('classification', ['grafted', 'crafted'])->sum('total_quantity');
+            $inInventorySeedling = $inInventory - $inInventoryGrafted;
 
-            // Total Seedlings (Production + Inventory)
+            // Total Seedlings (Production + Inventory) with breakdown
             $totalSeedlings = $inProduction + $inInventory;
+            $totalGrafted = $inProductionGrafted + $inInventoryGrafted;
+            $totalSeedling = $inProductionSeedling + $inInventorySeedling;
 
             // Available Stock from inventories
             $availableStock = Inventory::where('status', 'Available')->sum('total_quantity');
@@ -191,8 +197,20 @@ class DashboardController extends Controller
                 'data' => [
                     'card_metrics' => [
                         'in_production' => (float) $inProduction,
+                        'in_production_breakdown' => [
+                            'grafted' => (float) $inProductionGrafted,
+                            'seedling' => (float) $inProductionSeedling,
+                        ],
                         'in_inventory' => (float) $inInventory,
+                        'in_inventory_breakdown' => [
+                            'grafted' => (float) $inInventoryGrafted,
+                            'seedling' => (float) $inInventorySeedling,
+                        ],
                         'total_seedlings' => (float) $totalSeedlings,
+                        'total_seedlings_breakdown' => [
+                            'grafted' => (float) $totalGrafted,
+                            'seedling' => (float) $totalSeedling,
+                        ],
                         'available_stock' => (float) $availableStock,
                         'pending_requests' => $pendingRequests,
                         'distributed' => (float) $distributed,
